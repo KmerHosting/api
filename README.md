@@ -1,48 +1,59 @@
 # KmerHosting API
 
-Public, versioned API gateway for KmerHosting customer resources.
+A simple server-side API for managing your KmerHosting services.
 
-## What is implemented in v1
+[![API](https://img.shields.io/badge/API-v1-161616)](https://api.kmerhosting.com/docs)
+[![OpenAPI](https://img.shields.io/badge/OpenAPI-Swagger-85ea2d)](https://api.kmerhosting.com/openapi.json)
 
-- `GET /health`
-- `GET /openapi.json` and Swagger UI at `GET /docs`
-- `GET /v1/account`
-- `GET /v1/services` and `GET /v1/services/{serviceId}`
-- `GET /v1/domains`
-- `GET /v1/email/services`
-- `GET /v1/vps/instances`
-- Domain auto-renew, nameserver and DNS-record management
-- Email service provisioning and DNS synchronization
-- Shared-hosting statistics and short-lived DirectAdmin access links
-- LXC VPS lifecycle actions, auto-renew and snapshot management
+## Get started
 
-Every customer route requires `Authorization: Bearer $KMERHOSTING_API_KEY`. Every mutation also requires an `Idempotency-Key`. This is a server-to-server API: never put a customer API key in browser code. The API intentionally omits passwords, provider credentials, internal administration routes, billing, purchases, service cancellation, VPS rebuilds, transfers, ownership changes and rollback operations.
+Explore the API with Swagger:
 
-## Deploy on the VPS
+[api.kmerhosting.com/docs](https://api.kmerhosting.com/docs)
 
-1. Apply every file under `supabase/migrations/` in order. The second migration protects the gateway-only rate-limit and idempotency tables with RLS.
-2. Configure the same random `KMERHOSTING_GATEWAY_SECRET` in the VPS environment and in the `domain-api`, `eh-mail-api`, `hosting-api-gateway` and `dashboard-kvm-provider` Supabase Edge Functions. It must be at least 32 bytes and must never be sent to a client. For example:
+## Authentication
 
-   ```bash
-   export KMERHOSTING_GATEWAY_SECRET="$(openssl rand -hex 32)"
-   supabase secrets set KMERHOSTING_GATEWAY_SECRET="$KMERHOSTING_GATEWAY_SECRET" --project-ref YOUR_PROJECT_REF
-   ```
-3. Deploy the corresponding `domain-api`, `eh-mail-api`, `hosting-api-gateway` and `dashboard-kvm-provider` product backend commits before enabling public API write scopes.
-4. Deploy the Dashboard `dashboard-auth` and frontend commits so customers can create narrowly scoped write keys. Until then, existing keys remain read-only.
-5. Clone the repository to `/opt/kmerhosting-api`, run `bun install`, and copy `.env.example` to `/etc/kmerhosting-api.env` with the real values. Set file mode `0600`.
-6. Create the dedicated `kmerapi` system user, install `deploy/kmerhosting-api.service`, then enable it with `systemctl enable --now kmerhosting-api`.
-7. Install `deploy/nginx/api.kmerhosting.com.conf`, obtain the TLS certificate with Certbot, test with `nginx -t`, then reload Nginx.
-
-The service listens on `127.0.0.1:8787`; do not open that port publicly. Nginx is the only public entry point.
-
-## Example
+Send your KmerHosting API key with every request:
 
 ```bash
-export KMERHOSTING_API_KEY='kh_live_...'
-curl --fail-with-body https://api.kmerhosting.com/v1/services \
+export KMERHOSTING_API_KEY="kh_live_..."
+
+curl https://api.kmerhosting.com/v1/services \
   -H "Authorization: Bearer $KMERHOSTING_API_KEY"
 ```
 
-## Scopes
+Keep your key on your server. Never use it in browser code, mobile apps, repositories or logs.
 
-The migration gives existing keys read-only scopes: `account:read`, `services:read`, `domains:read`, `email:read`, `hosting:read`, and `vps:read`. The Dashboard lets customers choose narrowly scoped keys for the supported actions. Do not create broad keys for browser code.
+## Available resources
+
+- Account and services
+- Domains, DNS and nameservers
+- Email Hosting
+- Shared Hosting
+- LXC VPS
+- Service status and details
+
+Supported actions are limited to resources owned by the authenticated account.
+
+## Safe requests
+
+Every write request requires an idempotency key:
+
+```bash
+curl -X POST https://api.kmerhosting.com/v1/example \
+  -H "Authorization: Bearer $KMERHOSTING_API_KEY" \
+  -H "Idempotency-Key: a-unique-request-id"
+```
+
+The API does not expose passwords, provider credentials, billing operations, transfers, ownership changes, destructive infrastructure operations or internal administration tools.
+
+## Documentation
+
+- [Swagger UI](https://api.kmerhosting.com/docs)
+- [OpenAPI specification](https://api.kmerhosting.com/openapi.json)
+- [SDKs](https://github.com/KmerHosting/sdk)
+- [Issues](https://github.com/KmerHosting/api/issues)
+
+## License
+
+Proprietary. KmerHosting API access is subject to KmerHosting terms.
