@@ -20,8 +20,13 @@ Every customer route requires `Authorization: Bearer $KMERHOSTING_API_KEY`. Ever
 
 ## Deploy on the VPS
 
-1. Apply `supabase/migrations/0001_public_api_keys.sql` in the KmerHosting Supabase project.
-2. Configure the same random `KMERHOSTING_GATEWAY_SECRET` in the VPS environment and in the `domain-api`, `eh-mail-api`, `hosting-api-gateway` and `dashboard-kvm-provider` Supabase Edge Functions. It must be at least 32 characters and must never be sent to a client.
+1. Apply every file under `supabase/migrations/` in order. The second migration protects the gateway-only rate-limit and idempotency tables with RLS.
+2. Configure the same random `KMERHOSTING_GATEWAY_SECRET` in the VPS environment and in the `domain-api`, `eh-mail-api`, `hosting-api-gateway` and `dashboard-kvm-provider` Supabase Edge Functions. It must be at least 32 bytes and must never be sent to a client. For example:
+
+   ```bash
+   export KMERHOSTING_GATEWAY_SECRET="$(openssl rand -hex 32)"
+   supabase secrets set KMERHOSTING_GATEWAY_SECRET="$KMERHOSTING_GATEWAY_SECRET" --project-ref YOUR_PROJECT_REF
+   ```
 3. Deploy the corresponding product backend commits before enabling public API write scopes.
 4. Clone the repository to `/opt/kmerhosting-api`, run `bun install`, and copy `.env.example` to `/etc/kmerhosting-api.env` with the real values. Set file mode `0600`.
 5. Create the dedicated `kmerapi` system user, install `deploy/kmerhosting-api.service`, then enable it with `systemctl enable --now kmerhosting-api`.
