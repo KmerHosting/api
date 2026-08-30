@@ -16,7 +16,7 @@ Public, versioned API gateway for KmerHosting customer resources.
 - Shared-hosting statistics and short-lived DirectAdmin access links
 - LXC VPS lifecycle actions, auto-renew and snapshot management
 
-Every customer route requires `Authorization: Bearer $KMERHOSTING_API_KEY`. Every mutation also requires an `Idempotency-Key`. The API intentionally omits passwords, provider credentials, internal administration routes, billing, purchases, service cancellation, VPS rebuilds, transfers, ownership changes and rollback operations.
+Every customer route requires `Authorization: Bearer $KMERHOSTING_API_KEY`. Every mutation also requires an `Idempotency-Key`. This is a server-to-server API: never put a customer API key in browser code. The API intentionally omits passwords, provider credentials, internal administration routes, billing, purchases, service cancellation, VPS rebuilds, transfers, ownership changes and rollback operations.
 
 ## Deploy on the VPS
 
