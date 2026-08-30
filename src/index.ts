@@ -16,6 +16,7 @@ type ApiKey = {
 
 type Principal = { key: ApiKey; userId: string };
 type IdempotencyClaim = { state: "created" | "replay" | "pending" | "conflict"; response_status?: number; response_body?: unknown };
+type MutationOutcome = { data: unknown; status?: number };
 
 const noStore = { "Cache-Control": "no-store" };
 const productForIdentity: Record<"domain" | "email", "domain" | "emails"> = { domain: "domain", email: "emails" };
@@ -87,7 +88,7 @@ async function readRoute(request: Request, config: Config, db: SupabaseRest, id:
   requireScope(principal.key.scopes, scope);
   try {
     const data = await work(principal);
-    await recordUsage(db, principal, id, operation, "succeeded");
+    await recordUsage(db, principal, id, operation, "succeeded").catch(() => undefined);
     return responseJson(request, config, { data, request_id: id }, 200, id);
   } catch (error) {
     await recordUsage(db, principal, id, operation, "rejected").catch(() => undefined);
@@ -101,7 +102,7 @@ function idempotencyKey(request: Request): string {
   return key;
 }
 
-async function writeRoute(request: Request, config: Config, db: SupabaseRest, id: string, scope: string, operation: string, path: string, work: (principal: Principal, body: Record<string, unknown>) => Promise<unknown>): Promise<Response> {
+async function writeRoute(request: Request, config: Config, db: SupabaseRest, id: string, scope: string, operation: string, path: string, work: (principal: Principal, body: Record<string, unknown>) => Promise<MutationOutcome>): Promise<Response> {
   const principal = await authenticate(request, db);
   requireScope(principal.key.scopes, scope);
   const { raw, body } = await jsonBody(request);
@@ -113,8 +114,10 @@ async function writeRoute(request: Request, config: Config, db: SupabaseRest, id
   if (claim.state === "replay") return responseJson(request, config, claim.response_body, claim.response_status ?? 200, id);
   let response: { status: number; body: unknown };
   try {
-    response = { status: 200, body: { data: await work(principal, body), request_id: id } };
-    await recordUsage(db, principal, id, operation, "succeeded");
+    const outcome = await work(principal, body);
+    const status = outcome.status === 201 || outcome.status === 202 ? outcome.status : 200;
+    response = { status, body: { data: outcome.data, request_id: id } };
+    await recordUsage(db, principal, id, operation, "succeeded").catch(() => undefined);
   } catch (error) {
     const apiError = error instanceof ApiError ? error : new ApiError(500, "internal_error", "An unexpected error occurred.");
     response = { status: apiError.status, body: apiErrorBody(apiError, id) };
@@ -128,6 +131,12 @@ async function forward(config: Config, db: SupabaseRest, principal: Principal, p
   const response = await callProduct(config, { product, productUserId: await productUserId(db, principal, product), method, path, body });
   if (response.status >= 400) productError(response);
   return response.payload;
+}
+
+async function forwardMutation(config: Config, db: SupabaseRest, principal: Principal, product: Product, method: string, path: string, body?: unknown): Promise<MutationOutcome> {
+  const response = await callProduct(config, { product, productUserId: await productUserId(db, principal, product), method, path, body });
+  if (response.status >= 400) productError(response);
+  return { data: response.payload, status: response.status };
 }
 
 const docsHtml = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>KmerHosting API</title><link rel="stylesheet" href="/docs/swagger-ui.css"></head><body><div id="swagger-ui"></div><script src="/docs/swagger-ui-bundle.js"></script><script>SwaggerUIBundle({url:'/openapi.json',dom_id:'#swagger-ui',persistAuthorization:true})</script></body></html>`;
@@ -164,8 +173,8 @@ export async function handle(request: Request, config: Config = loadConfig()): P
       const [, domainId, area, recordId] = domain;
       const upstream = `/domains/${domainId}${area ? `/${area}` : ""}${recordId ? `/${recordId}` : ""}`;
       if (request.method === "GET" && (!area || area === "dns")) return readRoute(request, config, db, id, "domains:read", area === "dns" ? "domains.dns.list" : "domains.read", (principal) => forward(config, db, principal, "domain", "GET", upstream));
-      if ((area === "auto-renew" || area === "nameservers") && request.method === "PUT") return writeRoute(request, config, db, id, "domains:write", `domains.${area}`, path, (principal, body) => forward(config, db, principal, "domain", "PUT", upstream, body));
-      if (area === "dns" && ["POST", "PUT", "DELETE"].includes(request.method)) return writeRoute(request, config, db, id, "domains:dns:write", `domains.dns.${request.method.toLowerCase()}`, path, (principal, body) => forward(config, db, principal, "domain", request.method, upstream, body));
+      if ((area === "auto-renew" || area === "nameservers") && request.method === "PUT") return writeRoute(request, config, db, id, "domains:write", `domains.${area}`, path, (principal, body) => forwardMutation(config, db, principal, "domain", "PUT", upstream, body));
+      if (area === "dns" && ["POST", "PUT", "DELETE"].includes(request.method)) return writeRoute(request, config, db, id, "domains:dns:write", `domains.dns.${request.method.toLowerCase()}`, path, (principal, body) => forwardMutation(config, db, principal, "domain", request.method, upstream, body));
     }
     if (path === "/v1/email/services" && request.method === "GET") return readRoute(request, config, db, id, "email:read", "email.services.list", async (principal) => {
       const userId = await productUserId(db, principal, "email");
@@ -175,14 +184,14 @@ export async function handle(request: Request, config: Config = loadConfig()): P
     if (email && request.method === "POST") {
       const [, serviceId, action] = email;
       const operation = action === "provision" ? "email.services.provision" : "email.services.dns.sync";
-      return writeRoute(request, config, db, id, "email:write", operation, path, (principal) => forward(config, db, principal, "email", "POST", "", { action: action === "provision" ? "provision_service" : "sync_dns", serviceId }));
+      return writeRoute(request, config, db, id, "email:write", operation, path, (principal) => forwardMutation(config, db, principal, "email", "POST", "", { action: action === "provision" ? "provision_service" : "sync_dns", serviceId }));
     }
     if (path === "/v1/hosting/services" && request.method === "GET") return readRoute(request, config, db, id, "hosting:read", "hosting.services.list", (principal) => db.rest(`dashboard_services?select=id,display_name,status,plan_name,management_mode,renewal_price,renewal_currency,renews_at,auto_renew,created_at&user_id=eq.${principal.userId}&source_system=eq.shared-hosting&order=created_at.desc`));
     const hosting = path.match(/^\/v1\/hosting\/services\/([0-9a-f-]{36})\/(stats|panel-access)$/i);
     if (hosting) {
       const [, serviceId, action] = hosting;
       if (action === "stats" && request.method === "GET") return readRoute(request, config, db, id, "hosting:read", "hosting.services.stats", (principal) => forward(config, db, principal, "hosting", "POST", "/service/stats", { serviceId }));
-      if (action === "panel-access" && request.method === "POST") return writeRoute(request, config, db, id, "hosting:panel:access", "hosting.services.panel_access", path, (principal, body) => forward(config, db, principal, "hosting", "POST", "/service/login", { serviceId, target: body.target }));
+      if (action === "panel-access" && request.method === "POST") return writeRoute(request, config, db, id, "hosting:panel:access", "hosting.services.panel_access", path, (principal, body) => forwardMutation(config, db, principal, "hosting", "POST", "/service/login", { serviceId, target: body.target }));
     }
     if (path === "/v1/vps/instances" && request.method === "GET") return readRoute(request, config, db, id, "vps:read", "vps.instances.list", async (principal) => {
       const userId = await db.productIdentity(principal.userId, "lxc");
@@ -192,12 +201,12 @@ export async function handle(request: Request, config: Config = loadConfig()): P
     if (vps) {
       const [, serviceId, area, snapshotId] = vps;
       if (!area && request.method === "GET") return readRoute(request, config, db, id, "vps:read", "vps.instances.read", (principal) => forward(config, db, principal, "lxc", "POST", "/details", { serviceId }));
-      if (area === "actions" && request.method === "POST") return writeRoute(request, config, db, id, "vps:write", "vps.instances.action", path, (principal, body) => forward(config, db, principal, "lxc", "POST", "/action", { serviceId, action: body.action }));
-      if (area === "auto-renew" && request.method === "PUT") return writeRoute(request, config, db, id, "vps:write", "vps.instances.auto_renew", path, (principal, body) => forward(config, db, principal, "lxc", "POST", "/auto-renew", { serviceId, enabled: body.enabled }));
+      if (area === "actions" && request.method === "POST") return writeRoute(request, config, db, id, "vps:write", "vps.instances.action", path, (principal, body) => forwardMutation(config, db, principal, "lxc", "POST", "/action", { serviceId, action: body.action }));
+      if (area === "auto-renew" && request.method === "PUT") return writeRoute(request, config, db, id, "vps:write", "vps.instances.auto_renew", path, (principal, body) => forwardMutation(config, db, principal, "lxc", "POST", "/auto-renew", { serviceId, enabled: body.enabled }));
       if (area === "snapshots" && !snapshotId && request.method === "GET") return readRoute(request, config, db, id, "vps:read", "vps.snapshots.list", (principal) => forward(config, db, principal, "lxc", "POST", "/snapshots/list", { serviceId }));
-      if (area === "snapshots" && !snapshotId && request.method === "POST") return writeRoute(request, config, db, id, "vps:snapshots:write", "vps.snapshots.create", path, (principal, body) => forward(config, db, principal, "lxc", "POST", "/snapshots/create", { serviceId, name: body.name, description: body.description }));
-      if (area === "snapshots" && snapshotId && request.method === "PATCH") return writeRoute(request, config, db, id, "vps:snapshots:write", "vps.snapshots.update", path, (principal, body) => forward(config, db, principal, "lxc", "POST", "/snapshots/update", { serviceId, snapshotId, name: body.name, description: body.description }));
-      if (area === "snapshots" && snapshotId && request.method === "DELETE") return writeRoute(request, config, db, id, "vps:snapshots:write", "vps.snapshots.delete", path, (principal) => forward(config, db, principal, "lxc", "POST", "/snapshots/delete", { serviceId, snapshotId }));
+      if (area === "snapshots" && !snapshotId && request.method === "POST") return writeRoute(request, config, db, id, "vps:snapshots:write", "vps.snapshots.create", path, (principal, body) => forwardMutation(config, db, principal, "lxc", "POST", "/snapshots/create", { serviceId, name: body.name, description: body.description }));
+      if (area === "snapshots" && snapshotId && request.method === "PATCH") return writeRoute(request, config, db, id, "vps:snapshots:write", "vps.snapshots.update", path, (principal, body) => forwardMutation(config, db, principal, "lxc", "POST", "/snapshots/update", { serviceId, snapshotId, name: body.name, description: body.description }));
+      if (area === "snapshots" && snapshotId && request.method === "DELETE") return writeRoute(request, config, db, id, "vps:snapshots:write", "vps.snapshots.delete", path, (principal) => forwardMutation(config, db, principal, "lxc", "POST", "/snapshots/delete", { serviceId, snapshotId }));
     }
     throw new ApiError(404, "not_found", "The requested endpoint does not exist.");
   } catch (error) { return errorResponse(request, config, error, id); }
