@@ -55,7 +55,7 @@ export const openapi = {
     },
   },
   components: {
-    securitySchemes: { bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "KMERHOSTING_API_KEY", description: "`Authorization: Bearer $KMERHOSTING_API_KEY`" } },
+    securitySchemes: { bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "KMERHOSTING_API_KEY or OAuth access token", description: "`Authorization: Bearer kh_live_...` or a user-scoped `kh_oauth_...` token." } },
     parameters: { IdempotencyKey: { in: "header", name: "Idempotency-Key", required: true, schema: { type: "string", minLength: 8, maxLength: 128, pattern: "^[A-Za-z0-9._:-]+$" } } },
     schemas: {
       Envelope: { type: "object", required: ["data", "request_id"], properties: { data: {}, request_id: { type: "string", format: "uuid" } } },
