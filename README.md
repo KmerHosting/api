@@ -27,10 +27,11 @@ Every customer route requires `Authorization: Bearer $KMERHOSTING_API_KEY`. Ever
    export KMERHOSTING_GATEWAY_SECRET="$(openssl rand -hex 32)"
    supabase secrets set KMERHOSTING_GATEWAY_SECRET="$KMERHOSTING_GATEWAY_SECRET" --project-ref YOUR_PROJECT_REF
    ```
-3. Deploy the corresponding product backend commits before enabling public API write scopes.
-4. Clone the repository to `/opt/kmerhosting-api`, run `bun install`, and copy `.env.example` to `/etc/kmerhosting-api.env` with the real values. Set file mode `0600`.
-5. Create the dedicated `kmerapi` system user, install `deploy/kmerhosting-api.service`, then enable it with `systemctl enable --now kmerhosting-api`.
-6. Install `deploy/nginx/api.kmerhosting.com.conf`, obtain the TLS certificate with Certbot, test with `nginx -t`, then reload Nginx.
+3. Deploy the corresponding `domain-api`, `eh-mail-api`, `hosting-api-gateway` and `dashboard-kvm-provider` product backend commits before enabling public API write scopes.
+4. Deploy the Dashboard `dashboard-auth` and frontend commits so customers can create narrowly scoped write keys. Until then, existing keys remain read-only.
+5. Clone the repository to `/opt/kmerhosting-api`, run `bun install`, and copy `.env.example` to `/etc/kmerhosting-api.env` with the real values. Set file mode `0600`.
+6. Create the dedicated `kmerapi` system user, install `deploy/kmerhosting-api.service`, then enable it with `systemctl enable --now kmerhosting-api`.
+7. Install `deploy/nginx/api.kmerhosting.com.conf`, obtain the TLS certificate with Certbot, test with `nginx -t`, then reload Nginx.
 
 The service listens on `127.0.0.1:8787`; do not open that port publicly. Nginx is the only public entry point.
 
