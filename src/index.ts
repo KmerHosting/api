@@ -1,7 +1,7 @@
 import { loadConfig, type Config } from "./config";
 import { callProduct, productError, type Product } from "./gateway";
 import { openapi } from "./openapi";
-import { ApiError, assertActiveKey, extractBearerKey, requireScope, sha256 } from "./security";
+import { ApiError, assertActiveKey, assertActiveToken, extractBearerCredential, requireScope, sha256 } from "./security";
 import { SupabaseRest } from "./supabase";
 
 type ApiKey = {
@@ -14,7 +14,16 @@ type ApiKey = {
   disabled_at: string | null;
 };
 
-type Principal = { key: ApiKey; userId: string };
+type OAuthToken = {
+  id: string;
+  user_id: string;
+  scopes: string[];
+  rate_limit_per_minute: number;
+  expires_at: string;
+  revoked_at: string | null;
+};
+
+type Principal = { kind: "api_key"; key: ApiKey; userId: string } | { kind: "oauth"; token: OAuthToken; userId: string };
 type IdempotencyClaim = { state: "created" | "replay" | "pending" | "conflict"; response_status?: number; response_body?: unknown };
 type MutationOutcome = { data: unknown; status?: number };
 
@@ -62,16 +71,29 @@ async function jsonBody(request: Request): Promise<{ raw: string; body: Record<s
 }
 
 async function authenticate(request: Request, db: SupabaseRest): Promise<Principal> {
-  const hash = await sha256(extractBearerKey(request.headers.get("authorization")));
-  const keys = await db.rest<ApiKey[]>(`dashboard_api_keys?select=id,user_id,scopes,rate_limit_per_minute,expires_at,revoked_at,disabled_at&secret_hash=eq.${hash}&limit=1`);
-  const key = keys[0];
-  if (!key) throw new ApiError(401, "invalid_api_key", "The API key is invalid.");
-  assertActiveKey(key);
-  if (!Array.isArray(key.scopes)) throw new ApiError(503, "api_key_schema_not_ready", "The API-key scope migration has not been applied.");
-  const allowed = await db.rpc<boolean>("consume_dashboard_api_key_rate_limit", { p_api_key_id: key.id, p_limit: key.rate_limit_per_minute });
+  const credential = extractBearerCredential(request.headers.get("authorization"));
+  const hash = await sha256(credential);
+  if (credential.startsWith("kh_live_")) {
+    const keys = await db.rest<ApiKey[]>(`dashboard_api_keys?select=id,user_id,scopes,rate_limit_per_minute,expires_at,revoked_at,disabled_at&secret_hash=eq.${hash}&limit=1`);
+    const key = keys[0];
+    if (!key) throw new ApiError(401, "invalid_api_key", "The API key is invalid.");
+    assertActiveKey(key);
+    if (!Array.isArray(key.scopes)) throw new ApiError(503, "api_key_schema_not_ready", "The API-key scope migration has not been applied.");
+    const allowed = await db.rpc<boolean>("consume_dashboard_api_key_rate_limit", { p_api_key_id: key.id, p_limit: key.rate_limit_per_minute });
+    if (!allowed) throw new ApiError(429, "rate_limit_exceeded", "Too many requests. Try again in one minute.");
+    await db.update(`dashboard_api_keys?id=eq.${key.id}`, { last_used_at: new Date().toISOString() });
+    return { kind: "api_key", key, userId: key.user_id };
+  }
+
+  const tokens = await db.rest<OAuthToken[]>(`dashboard_oauth_access_tokens?select=id,user_id,scopes,rate_limit_per_minute,expires_at,revoked_at&token_hash=eq.${hash}&limit=1`);
+  const token = tokens[0];
+  if (!token) throw new ApiError(401, "invalid_token", "The OAuth access token is invalid.");
+  assertActiveToken(token);
+  if (!Array.isArray(token.scopes)) throw new ApiError(503, "oauth_schema_not_ready", "The OAuth migration has not been applied.");
+  const allowed = await db.rpc<boolean>("consume_dashboard_oauth_rate_limit", { p_token_id: token.id, p_limit: token.rate_limit_per_minute });
   if (!allowed) throw new ApiError(429, "rate_limit_exceeded", "Too many requests. Try again in one minute.");
-  await db.update(`dashboard_api_keys?id=eq.${key.id}`, { last_used_at: new Date().toISOString() });
-  return { key, userId: key.user_id };
+  await db.update(`dashboard_oauth_access_tokens?id=eq.${token.id}`, { last_used_at: new Date().toISOString() });
+  return { kind: "oauth", token, userId: token.user_id };
 }
 
 async function productUserId(db: SupabaseRest, principal: Principal, product: Product): Promise<string> {
@@ -80,12 +102,16 @@ async function productUserId(db: SupabaseRest, principal: Principal, product: Pr
 }
 
 async function recordUsage(db: SupabaseRest, principal: Principal, id: string, operation: string, status: string): Promise<void> {
-  await db.insert("dashboard_api_key_usage", { api_key_id: principal.key.id, user_id: principal.userId, request_id: id, product: "kmerhosting-api", service: "public-api", operation, status, billable: false, cost_usd_micros: 0, metadata: {} });
+  if (principal.kind === "api_key") {
+    await db.insert("dashboard_api_key_usage", { api_key_id: principal.key.id, user_id: principal.userId, request_id: id, product: "kmerhosting-api", service: "public-api", operation, status, billable: false, cost_usd_micros: 0, metadata: {} });
+  } else {
+    await db.insert("dashboard_oauth_usage", { oauth_token_id: principal.token.id, user_id: principal.userId, request_id: id, operation, status, metadata: {} });
+  }
 }
 
 async function readRoute(request: Request, config: Config, db: SupabaseRest, id: string, scope: string, operation: string, work: (principal: Principal) => Promise<unknown>): Promise<Response> {
   const principal = await authenticate(request, db);
-  requireScope(principal.key.scopes, scope);
+  requireScope(principal.kind === "api_key" ? principal.key.scopes : principal.token.scopes, scope);
   try {
     const data = await work(principal);
     await recordUsage(db, principal, id, operation, "succeeded").catch(() => undefined);
@@ -104,11 +130,13 @@ function idempotencyKey(request: Request): string {
 
 async function writeRoute(request: Request, config: Config, db: SupabaseRest, id: string, scope: string, operation: string, path: string, work: (principal: Principal, body: Record<string, unknown>) => Promise<MutationOutcome>): Promise<Response> {
   const principal = await authenticate(request, db);
-  requireScope(principal.key.scopes, scope);
+  requireScope(principal.kind === "api_key" ? principal.key.scopes : principal.token.scopes, scope);
   const { raw, body } = await jsonBody(request);
   const key = idempotencyKey(request);
   const fingerprint = await sha256([request.method, path, raw].join("\n"));
-  const claim = await db.rpc<IdempotencyClaim>("claim_dashboard_api_idempotency_key", { p_api_key_id: principal.key.id, p_operation: operation, p_idempotency_key: key, p_request_hash: fingerprint });
+  const claim = principal.kind === "api_key"
+    ? await db.rpc<IdempotencyClaim>("claim_dashboard_api_idempotency_key", { p_api_key_id: principal.key.id, p_operation: operation, p_idempotency_key: key, p_request_hash: fingerprint })
+    : await db.rpc<IdempotencyClaim>("claim_dashboard_oauth_idempotency_key", { p_oauth_token_id: principal.token.id, p_operation: operation, p_idempotency_key: key, p_request_hash: fingerprint });
   if (claim.state === "conflict") throw new ApiError(409, "idempotency_key_conflict", "This Idempotency-Key was used with a different request.");
   if (claim.state === "pending") throw new ApiError(409, "request_in_progress", "A request with this Idempotency-Key is still in progress.");
   if (claim.state === "replay") return responseJson(request, config, claim.response_body, claim.response_status ?? 200, id);
@@ -123,7 +151,11 @@ async function writeRoute(request: Request, config: Config, db: SupabaseRest, id
     response = { status: apiError.status, body: apiErrorBody(apiError, id) };
     await recordUsage(db, principal, id, operation, "rejected").catch(() => undefined);
   }
-  await db.rpc("complete_dashboard_api_idempotency_key", { p_api_key_id: principal.key.id, p_operation: operation, p_idempotency_key: key, p_response_status: response.status, p_response_body: response.body });
+  if (principal.kind === "api_key") {
+    await db.rpc("complete_dashboard_api_idempotency_key", { p_api_key_id: principal.key.id, p_operation: operation, p_idempotency_key: key, p_response_status: response.status, p_response_body: response.body });
+  } else {
+    await db.rpc("complete_dashboard_oauth_idempotency_key", { p_oauth_token_id: principal.token.id, p_operation: operation, p_idempotency_key: key, p_response_status: response.status, p_response_body: response.body });
+  }
   return responseJson(request, config, response.body, response.status, id);
 }
 
