@@ -184,7 +184,10 @@ export async function handle(request: Request, config: Config = loadConfig()): P
       if (action === "stats" && request.method === "GET") return readRoute(request, config, db, id, "hosting:read", "hosting.services.stats", (principal) => forward(config, db, principal, "hosting", "POST", "/service/stats", { serviceId }));
       if (action === "panel-access" && request.method === "POST") return writeRoute(request, config, db, id, "hosting:panel:access", "hosting.services.panel_access", path, (principal, body) => forward(config, db, principal, "hosting", "POST", "/service/login", { serviceId, target: body.target }));
     }
-    if (path === "/v1/vps/instances" && request.method === "GET") return readRoute(request, config, db, id, "vps:read", "vps.instances.list", (principal) => db.rest(`yts_instances?select=id,plan_code,hostname,status,ipv4,ipv6,ssh_host,ssh_port,region,distribution,created_at,renews_at,billing_status,auto_renew,cancellation_requested_at,cancel_at,grace_ends_at,suspended_at,managed&user_id=eq.${principal.userId}&order=created_at.desc`));
+    if (path === "/v1/vps/instances" && request.method === "GET") return readRoute(request, config, db, id, "vps:read", "vps.instances.list", async (principal) => {
+      const userId = await db.productIdentity(principal.userId, "lxc");
+      return db.rest(`yts_instances?select=id,plan_code,hostname,status,ipv4,ipv6,ssh_host,ssh_port,region,distribution,created_at,renews_at,billing_status,auto_renew,cancellation_requested_at,cancel_at,grace_ends_at,suspended_at,managed&user_id=eq.${userId}&order=created_at.desc`);
+    });
     const vps = path.match(/^\/v1\/vps\/instances\/([0-9a-f-]{36})(?:\/(actions|snapshots|auto-renew))?(?:\/([A-Za-z0-9._:-]{1,160}))?$/i);
     if (vps) {
       const [, serviceId, area, snapshotId] = vps;
