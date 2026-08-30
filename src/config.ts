@@ -24,8 +24,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     .map((origin) => origin.trim())
     .filter(Boolean);
 
-  if (production && (origins.length === 0 || origins.includes("*"))) {
-    throw new Error("CORS_ORIGINS must list explicit HTTPS origins in production.");
+  if (production && (origins.includes("*") || origins.some((origin) => !origin.startsWith("https://")))) {
+    throw new Error("CORS_ORIGINS may contain only explicit HTTPS origins in production.");
   }
 
   return {
