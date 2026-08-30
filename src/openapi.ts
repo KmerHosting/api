@@ -5,7 +5,7 @@ const mutation = (summary: string, scope: string, body: Record<string, unknown>,
   summary,
   description: `Requires the \`${scope}\` scope and a unique \`Idempotency-Key\` header.`,
   requestBody: json(body),
-  responses: { "200": response(description), "400": { $ref: "#/components/responses/Error" }, "401": { $ref: "#/components/responses/Error" }, "403": { $ref: "#/components/responses/Error" }, "409": { $ref: "#/components/responses/Error" } },
+  responses: { "200": response(description), "201": response(description), "202": response(description), "400": { $ref: "#/components/responses/Error" }, "401": { $ref: "#/components/responses/Error" }, "403": { $ref: "#/components/responses/Error" }, "409": { $ref: "#/components/responses/Error" } },
 });
 
 export const openapi = {
