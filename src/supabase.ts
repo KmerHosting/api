@@ -43,7 +43,7 @@ export class SupabaseRest {
     if (!response.ok) throw new Error(`Supabase insert failed (${response.status}).`);
   }
 
-  async productIdentity(userId: string, product: "domain" | "emails"): Promise<string> {
+  async productIdentity(userId: string, product: "domain" | "emails" | "lxc"): Promise<string> {
     const rows = await this.rest<Array<{ external_user_id: string | null }>>(
       `dashboard_product_identities?select=external_user_id&user_id=eq.${userId}&product=eq.${product}&limit=1`,
     );
