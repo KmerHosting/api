@@ -13,7 +13,7 @@ Explore the API with Swagger:
 
 ## Authentication
 
-Send your KmerHosting API key with every request:
+For server-to-server integrations, send a KmerHosting API key. Remote MCP clients use the user-scoped OAuth access token issued by the KmerHosting Dashboard.
 
 ```bash
 export KMERHOSTING_API_KEY="kh_live_..."
@@ -22,7 +22,7 @@ curl https://api.kmerhosting.com/v1/services \
   -H "Authorization: Bearer $KMERHOSTING_API_KEY"
 ```
 
-Keep your key on your server. Never use it in browser code, mobile apps, repositories or logs.
+Keep API keys on your server. Never use them in browser code, mobile apps, repositories or logs. OAuth tokens are short-lived, user-scoped and revocable from the admin console.
 
 ## Available resources
 
