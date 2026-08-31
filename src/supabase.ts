@@ -1,5 +1,11 @@
 import type { Config } from "./config";
 
+export class ProductIdentityNotLinkedError extends Error {
+  constructor(public readonly product: "domain" | "emails" | "lxc") {
+    super(`No ${product} product identity is linked to this account.`);
+  }
+}
+
 type RequestInitWithHeaders = RequestInit & { headers?: HeadersInit };
 
 export class SupabaseRest {
@@ -48,7 +54,7 @@ export class SupabaseRest {
       `dashboard_product_identities?select=external_user_id&user_id=eq.${userId}&product=eq.${product}&limit=1`,
     );
     const externalUserId = rows[0]?.external_user_id?.trim();
-    if (!externalUserId) throw new Error(`No ${product} product identity is linked to this account.`);
+    if (!externalUserId) throw new ProductIdentityNotLinkedError(product);
     return externalUserId;
   }
 }

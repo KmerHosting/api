@@ -46,6 +46,8 @@ export async function callProduct(config: Config, call: GatewayCall): Promise<Pr
       "X-KmerHosting-Gateway-Request-Id": requestId,
       "X-KmerHosting-Gateway-User-Id": call.productUserId,
       "X-KmerHosting-Gateway-Signature": signature,
+      "X-KmerHosting-Gateway-Body-Hash": bodyHash,
+      "X-KmerHosting-Gateway-Path": call.path,
     },
     body: rawBody || undefined,
   });
