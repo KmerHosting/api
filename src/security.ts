@@ -9,7 +9,7 @@ export class ApiError extends Error {
 }
 
 export function extractBearerCredential(header: string | null): string {
-  const match = header?.match(/^Bearer\s+(kh_(?:live|oauth)_[A-Za-z0-9_-]+)$/);
+  const match = header?.match(/^Bearer\s+(kh_(?:live|oauth)_[A-Za-z0-9_-]+)$/i);
   if (!match) {
     throw new ApiError(401, "invalid_token", "Use Authorization: Bearer KMERHOSTING_API_KEY or an OAuth access token.");
   }
@@ -31,7 +31,7 @@ export async function sha256(value: string): Promise<string> {
 
 export function requireScope(scopes: string[], scope: string): void {
   if (!scopes.includes(scope)) {
-    throw new ApiError(403, "insufficient_scope", `This API key requires the ${scope} scope.`);
+    throw new ApiError(403, "insufficient_scope", `This credential requires the ${scope} scope.`);
   }
 }
 
