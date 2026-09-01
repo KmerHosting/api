@@ -5,16 +5,16 @@ exec 9>/run/lock/api.kmerhosting.com-deploy.lock
 flock -n 9 || exit 0
 
 cd /opt/api.kmerhosting.com
-git fetch --quiet origin main
-current_commit="$(git rev-parse HEAD)"
-target_commit="$(git rev-parse origin/main)"
+runuser -u kmerapi -- git fetch --quiet origin main
+current_commit="$(runuser -u kmerapi -- git rev-parse HEAD)"
+target_commit="$(runuser -u kmerapi -- git rev-parse origin/main)"
 if [[ "$current_commit" == "$target_commit" ]]; then
   exit 0
 fi
 
-git merge --ff-only "$target_commit"
-/usr/local/bin/bun install --frozen-lockfile
-/usr/local/bin/bun test
-/usr/local/bin/bun run typecheck
+runuser -u kmerapi -- git merge --ff-only "$target_commit"
+runuser -u kmerapi -- /usr/local/bin/bun install --frozen-lockfile
+runuser -u kmerapi -- /usr/local/bin/bun test
+runuser -u kmerapi -- /usr/local/bin/bun run typecheck
 systemctl restart api.kmerhosting.com.service
 curl --fail --silent --show-error --retry 10 --retry-delay 1 https://api.kmerhosting.com/health >/dev/null
