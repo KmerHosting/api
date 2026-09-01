@@ -51,7 +51,7 @@ export function trustedClientIpv4(request: Request): string | null {
 }
 
 export function requireAllowedIpv4(key: { allowed_ipv4?: string[] | null }, scope: string, clientIpv4: string | null): void {
-  const dangerous = new Set(["lxc:power:write", "lxc:snapshots:write", "lxc:credentials:write", "lxc:reinstall", "lxc:terminal:access", "kvm:power:write", "kvm:snapshots:write"]);
+  const dangerous = new Set(["lxc:power:write", "lxc:snapshots:write", "lxc:credentials:write", "lxc:reinstall", "lxc:terminal:access", "kvm:power:write", "kvm:snapshots:write", "kvm:credentials:write"]);
   if (!dangerous.has(scope)) return;
   const allowed = Array.isArray(key.allowed_ipv4) ? key.allowed_ipv4.map(String) : [];
   if (!clientIpv4 || !allowed.includes(clientIpv4)) {
