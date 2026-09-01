@@ -73,6 +73,24 @@ async function json(response: Response): Promise<any> {
   return response.json();
 }
 
+test("serves the interactive API documentation and OpenAPI contract", async () => {
+  const docs = await handle(new Request("https://api.example.test/docs"), config, storeFor());
+  expect(docs.status).toBe(200);
+  expect(docs.headers.get("content-type")).toContain("text/html");
+  const html = await docs.text();
+  expect(html).toContain("KmerHosting API");
+  expect(html).toContain("/docs/swagger-ui.css");
+  expect(html).toContain("/docs/swagger-ui-bundle.js");
+  expect(html).toContain("url:'/openapi.json'");
+
+  const schema = await handle(new Request("https://api.example.test/openapi.json"), config, storeFor());
+  expect(schema.status).toBe(200);
+  expect(schema.headers.get("content-type")).toContain("application/json");
+  const document = await schema.json() as { openapi?: string; info?: { title?: string } };
+  expect(document.openapi).toBe("3.1.0");
+  expect(document.info?.title).toBe("KmerHosting API");
+});
+
 function request(path: string, init: RequestInit = {}, token = "kh_live_test"): Request {
   const headers = new Headers(init.headers);
   headers.set("Authorization", `Bearer ${token}`);
