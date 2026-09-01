@@ -36,8 +36,26 @@ export function requireScope(scopes: string[], scope: string): void {
 }
 
 export function assertActiveKey(key: { revoked_at: string | null; disabled_at: string | null; expires_at: string | null }): void {
-  if (key.revoked_at || key.disabled_at || (key.expires_at && Date.parse(key.expires_at) <= Date.now())) {
+  if (key.revoked_at || key.disabled_at || !key.expires_at || Date.parse(key.expires_at) <= Date.now()) {
     throw new ApiError(401, "invalid_api_key", "This API key is inactive, revoked, or expired.");
+  }
+}
+
+const IPV4 = /^(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
+
+export function trustedClientIpv4(request: Request): string | null {
+  // Nginx overwrites this header from the TCP peer; do not consult a
+  // client-provided X-Forwarded-For chain here.
+  const value = request.headers.get("x-real-ip")?.trim() ?? "";
+  return IPV4.test(value) ? value : null;
+}
+
+export function requireAllowedIpv4(key: { allowed_ipv4?: string[] | null }, scope: string, clientIpv4: string | null): void {
+  const dangerous = new Set(["lxc:power:write", "lxc:snapshots:write", "lxc:credentials:write", "lxc:reinstall", "lxc:terminal:access", "kvm:power:write", "kvm:snapshots:write"]);
+  if (!dangerous.has(scope)) return;
+  const allowed = Array.isArray(key.allowed_ipv4) ? key.allowed_ipv4.map(String) : [];
+  if (!clientIpv4 || !allowed.includes(clientIpv4)) {
+    throw new ApiError(403, "source_ipv4_not_allowed", "This dangerous operation is not allowed from the current IPv4 address.");
   }
 }
 

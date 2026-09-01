@@ -1,7 +1,7 @@
 import type { Config } from "./config";
 import { ApiError, sha256 } from "./security";
 
-export type Product = "domain" | "email" | "hosting" | "lxc";
+export type Product = "domain" | "email" | "hosting" | "lxc" | "kvm";
 
 type GatewayCall = {
   product: Product;
@@ -17,7 +17,7 @@ function baseUrl(config: Config, product: Product): string {
   return product === "domain" ? config.domainApiUrl
     : product === "email" ? config.emailApiUrl
     : product === "hosting" ? config.hostingApiUrl
-    : config.lxcApiUrl;
+    : product === "lxc" ? config.lxcApiUrl : config.kvmApiUrl;
 }
 
 async function hmac(secret: string, value: string): Promise<string> {
@@ -33,7 +33,7 @@ export async function callProduct(config: Config, call: GatewayCall): Promise<Pr
   const bodyHash = await sha256(rawBody);
   const canonical = [timestamp, requestId, call.method.toUpperCase(), call.path, bodyHash, call.productUserId].join(".");
   const signature = await hmac(config.gatewaySecret, canonical);
-  const target = call.product === "lxc"
+  const target = call.product === "lxc" || call.product === "kvm"
     ? `${baseUrl(config, call.product)}?path=${encodeURIComponent(call.path)}`
     : `${baseUrl(config, call.product)}${call.path}`;
   const response = await fetch(target, {

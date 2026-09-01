@@ -14,6 +14,7 @@ const config: Config = {
   emailApiUrl: "https://email.example.test",
   hostingApiUrl: "https://hosting.example.test",
   lxcApiUrl: "https://lxc.example.test",
+  kvmApiUrl: "https://lxc.example.test",
   corsOrigins: new Set(),
 };
 

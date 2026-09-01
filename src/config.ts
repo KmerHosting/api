@@ -9,6 +9,7 @@ export type Config = {
   emailApiUrl: string;
   hostingApiUrl: string;
   lxcApiUrl: string;
+  kvmApiUrl: string;
   corsOrigins: Set<string>;
 };
 
@@ -38,7 +39,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     domainApiUrl: (env.DOMAIN_API_URL ?? `${required("SUPABASE_URL", env.SUPABASE_URL).replace(/\/$/, "")}/functions/v1/domain-api`).replace(/\/$/, ""),
     emailApiUrl: (env.EMAIL_API_URL ?? `${required("SUPABASE_URL", env.SUPABASE_URL).replace(/\/$/, "")}/functions/v1/eh-mail-api`).replace(/\/$/, ""),
     hostingApiUrl: (env.HOSTING_API_URL ?? `${required("SUPABASE_URL", env.SUPABASE_URL).replace(/\/$/, "")}/functions/v1/hosting-api-gateway`).replace(/\/$/, ""),
-    lxcApiUrl: (env.LXC_API_URL ?? `${required("SUPABASE_URL", env.SUPABASE_URL).replace(/\/$/, "")}/functions/v1/dashboard-kvm-provider`).replace(/\/$/, ""),
+    lxcApiUrl: (env.LXC_API_URL ?? "https://lxc.kmerhosting.com/api/internal").replace(/\/$/, ""),
+    kvmApiUrl: (env.KVM_API_URL ?? `${required("SUPABASE_URL", env.SUPABASE_URL).replace(/\/$/, "")}/functions/v1/dashboard-kvm-provider`).replace(/\/$/, ""),
     corsOrigins: new Set(origins),
   };
 }

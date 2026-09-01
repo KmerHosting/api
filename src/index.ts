@@ -1,7 +1,7 @@
 import { loadConfig, type Config } from "./config";
 import { callProduct, productError, type Product } from "./gateway";
 import { openapi } from "./openapi";
-import { ApiError, assertActiveKey, assertActiveToken, extractBearerCredential, requireScope, sha256 } from "./security";
+import { ApiError, assertActiveKey, assertActiveToken, extractBearerCredential, requireAllowedIpv4, requireScope, sha256, trustedClientIpv4 } from "./security";
 import { ProductIdentityNotLinkedError, SupabaseRest } from "./supabase";
 
 type ApiKey = {
@@ -12,6 +12,7 @@ type ApiKey = {
   expires_at: string | null;
   revoked_at: string | null;
   disabled_at: string | null;
+  allowed_ipv4?: string[];
 };
 
 type OAuthToken = {
@@ -76,7 +77,7 @@ async function authenticate(request: Request, db: ApiStore): Promise<Principal> 
   const credential = extractBearerCredential(request.headers.get("authorization"));
   const hash = await sha256(credential);
   if (credential.startsWith("kh_live_")) {
-    const keys = await db.rest<ApiKey[]>(`dashboard_api_keys?select=id,user_id,scopes,rate_limit_per_minute,expires_at,revoked_at,disabled_at&secret_hash=eq.${hash}&limit=1`);
+    const keys = await db.rest<ApiKey[]>(`dashboard_api_keys?select=id,user_id,scopes,rate_limit_per_minute,expires_at,revoked_at,disabled_at,allowed_ipv4&secret_hash=eq.${hash}&limit=1`);
     const key = keys[0];
     if (!key) throw new ApiError(401, "invalid_api_key", "The API key is invalid.");
     assertActiveKey(key);
@@ -121,7 +122,7 @@ async function optionalProductUserId(db: ApiStore, principal: Principal, product
   }
 }
 
-async function requireOwnedService(db: ApiStore, principal: Principal, serviceId: string, product: "hosting" | "lxc"): Promise<void> {
+async function requireOwnedService(db: ApiStore, principal: Principal, serviceId: string, product: "hosting" | "kvm"): Promise<void> {
   const filter = product === "hosting" ? "&source_system=eq.shared-hosting" : "&service_type=eq.kvm_vps";
   const rows = await db.rest<Record<string, unknown>[]>(
     `dashboard_services?select=id&id=eq.${serviceId}&user_id=eq.${principal.userId}${filter}&limit=1`,
@@ -129,9 +130,17 @@ async function requireOwnedService(db: ApiStore, principal: Principal, serviceId
   if (!rows[0]) throw new ApiError(404, "service_not_found", "The service was not found.");
 }
 
-async function recordUsage(db: ApiStore, principal: Principal, id: string, operation: string, status: string): Promise<void> {
+function routeTemplate(path: string): string {
+  return path.replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, ":id");
+}
+
+async function recordUsage(db: ApiStore, principal: Principal, id: string, operation: string, status: string, request: Request, kind: "read" | "mutation" | "operation" = "read", httpStatus?: number): Promise<void> {
   if (principal.kind === "api_key") {
-    await db.insert("dashboard_api_key_usage", { api_key_id: principal.key.id, user_id: principal.userId, request_id: id, product: "kmerhosting-api", service: "public-api", operation, status, billable: false, cost_usd_micros: 0, metadata: {} });
+    await db.insert("dashboard_api_key_usage", {
+      api_key_id: principal.key.id, user_id: principal.userId, request_id: id, product: "developer_api", service: "public-api", operation, status,
+      billable: false, cost_usd_micros: 0, client_ipv4: trustedClientIpv4(request), user_agent: (request.headers.get("user-agent") ?? "").slice(0, 500),
+      http_method: request.method, route: routeTemplate(new URL(request.url).pathname), http_status: httpStatus ?? (status === "succeeded" ? 200 : 500), request_kind: kind, metadata: {},
+    });
   } else {
     await db.insert("dashboard_oauth_usage", { oauth_token_id: principal.token.id, user_id: principal.userId, request_id: id, operation, status, metadata: {} });
   }
@@ -139,13 +148,14 @@ async function recordUsage(db: ApiStore, principal: Principal, id: string, opera
 
 async function readRoute(request: Request, config: Config, db: ApiStore, id: string, scope: string, operation: string, work: (principal: Principal) => Promise<unknown>): Promise<Response> {
   const principal = await authenticate(request, db);
-  requireScope(principal.kind === "api_key" ? principal.key.scopes : principal.token.scopes, scope);
   try {
+    requireScope(principal.kind === "api_key" ? principal.key.scopes : principal.token.scopes, scope);
+    if (principal.kind === "api_key") requireAllowedIpv4(principal.key, scope, trustedClientIpv4(request));
     const data = await work(principal);
-    await recordUsage(db, principal, id, operation, "succeeded").catch(() => undefined);
+    await recordUsage(db, principal, id, operation, "succeeded", request, "read", 200).catch(() => undefined);
     return responseJson(request, config, { data, request_id: id }, 200, id);
   } catch (error) {
-    await recordUsage(db, principal, id, operation, "rejected").catch(() => undefined);
+    await recordUsage(db, principal, id, operation, "rejected", request, "read", error instanceof ApiError ? error.status : 500).catch(() => undefined);
     throw error;
   }
 }
@@ -158,9 +168,19 @@ function idempotencyKey(request: Request): string {
 
 async function writeRoute(request: Request, config: Config, db: ApiStore, id: string, scope: string, operation: string, path: string, work: (principal: Principal, body: Record<string, unknown>) => Promise<MutationOutcome>): Promise<Response> {
   const principal = await authenticate(request, db);
-  requireScope(principal.kind === "api_key" ? principal.key.scopes : principal.token.scopes, scope);
-  const { raw, body } = await jsonBody(request);
-  const key = idempotencyKey(request);
+  try {
+    requireScope(principal.kind === "api_key" ? principal.key.scopes : principal.token.scopes, scope);
+    if (principal.kind === "api_key") requireAllowedIpv4(principal.key, scope, trustedClientIpv4(request));
+  } catch (error) {
+    await recordUsage(db, principal, id, operation, "rejected", request, "operation", error instanceof ApiError ? error.status : 500).catch(() => undefined);
+    throw error;
+  }
+  let raw: string; let body: Record<string, unknown>; let key: string;
+  try { ({ raw, body } = await jsonBody(request)); key = idempotencyKey(request); }
+  catch (error) {
+    await recordUsage(db, principal, id, operation, "rejected", request, "mutation", error instanceof ApiError ? error.status : 400).catch(() => undefined);
+    throw error;
+  }
   const fingerprint = await sha256([request.method, path, raw].join("\n"));
   const claim = principal.kind === "api_key"
     ? await db.rpc<IdempotencyClaim>("claim_dashboard_api_idempotency_key", { p_api_key_id: principal.key.id, p_operation: operation, p_idempotency_key: key, p_request_hash: fingerprint })
@@ -173,11 +193,11 @@ async function writeRoute(request: Request, config: Config, db: ApiStore, id: st
     const outcome = await work(principal, body);
     const status = outcome.status === 201 || outcome.status === 202 ? outcome.status : 200;
     response = { status, body: { data: outcome.data, request_id: id } };
-    await recordUsage(db, principal, id, operation, "succeeded").catch(() => undefined);
+    await recordUsage(db, principal, id, operation, "succeeded", request, status === 202 ? "operation" : "mutation", status).catch(() => undefined);
   } catch (error) {
     const apiError = error instanceof ApiError ? error : new ApiError(500, "internal_error", "An unexpected error occurred.");
     response = { status: apiError.status, body: apiErrorBody(apiError, id) };
-    await recordUsage(db, principal, id, operation, "rejected").catch(() => undefined);
+    await recordUsage(db, principal, id, operation, "rejected", request, "mutation", apiError.status).catch(() => undefined);
   }
   if (principal.kind === "api_key") {
     await db.rpc("complete_dashboard_api_idempotency_key", { p_api_key_id: principal.key.id, p_operation: operation, p_idempotency_key: key, p_response_status: response.status, p_response_body: response.body });
@@ -263,46 +283,21 @@ export async function handle(request: Request, config: Config = loadConfig(), st
         return forwardMutation(config, db, principal, "hosting", "POST", "/service/login", { serviceId, target: body.target });
       });
     }
-    if (path === "/v1/vps/instances" && request.method === "GET") return await readRoute(request, config, db, id, "vps:read", "vps.instances.list", async (principal) => {
-      try {
-        const userId = await db.productIdentity(principal.userId, "lxc");
-        return db.rest(`yts_instances?select=id,plan_code,hostname,status,ipv4,ipv6,ssh_host,ssh_port,region,distribution,created_at,renews_at,billing_status,auto_renew,cancellation_requested_at,cancel_at,grace_ends_at,suspended_at,managed&user_id=eq.${userId}&order=created_at.desc`);
-      } catch (error) {
-        if (error instanceof ProductIdentityNotLinkedError) return [];
-        throw error;
-      }
-    });
-    const vps = path.match(/^\/v1\/vps\/instances\/([0-9a-f-]{36})(?:\/(actions|snapshots|auto-renew))?(?:\/([A-Za-z0-9._:-]{1,160}))?$/i);
-    if (vps) {
-      const [, serviceId, area, snapshotId] = vps;
-      if (!area && request.method === "GET") return await readRoute(request, config, db, id, "vps:read", "vps.instances.read", async (principal) => {
-        await requireOwnedService(db, principal, serviceId, "lxc");
-        return forward(config, db, principal, "lxc", "POST", "/details", { serviceId });
-      });
-      if (area === "actions" && request.method === "POST") return await writeRoute(request, config, db, id, "vps:write", "vps.instances.action", path, async (principal, body) => {
-        await requireOwnedService(db, principal, serviceId, "lxc");
-        return forwardMutation(config, db, principal, "lxc", "POST", "/action", { serviceId, action: body.action });
-      });
-      if (area === "auto-renew" && request.method === "PUT") return await writeRoute(request, config, db, id, "vps:write", "vps.instances.auto_renew", path, async (principal, body) => {
-        await requireOwnedService(db, principal, serviceId, "lxc");
-        return forwardMutation(config, db, principal, "lxc", "POST", "/auto-renew", { serviceId, enabled: body.enabled });
-      });
-      if (area === "snapshots" && !snapshotId && request.method === "GET") return await readRoute(request, config, db, id, "vps:read", "vps.snapshots.list", async (principal) => {
-        await requireOwnedService(db, principal, serviceId, "lxc");
-        return forward(config, db, principal, "lxc", "POST", "/snapshots/list", { serviceId });
-      });
-      if (area === "snapshots" && !snapshotId && request.method === "POST") return await writeRoute(request, config, db, id, "vps:snapshots:write", "vps.snapshots.create", path, async (principal, body) => {
-        await requireOwnedService(db, principal, serviceId, "lxc");
-        return forwardMutation(config, db, principal, "lxc", "POST", "/snapshots/create", { serviceId, name: body.name, description: body.description });
-      });
-      if (area === "snapshots" && snapshotId && request.method === "PATCH") return await writeRoute(request, config, db, id, "vps:snapshots:write", "vps.snapshots.update", path, async (principal, body) => {
-        await requireOwnedService(db, principal, serviceId, "lxc");
-        return forwardMutation(config, db, principal, "lxc", "POST", "/snapshots/update", { serviceId, snapshotId, name: body.name, description: body.description });
-      });
-      if (area === "snapshots" && snapshotId && request.method === "DELETE") return await writeRoute(request, config, db, id, "vps:snapshots:write", "vps.snapshots.delete", path, async (principal) => {
-        await requireOwnedService(db, principal, serviceId, "lxc");
-        return forwardMutation(config, db, principal, "lxc", "POST", "/snapshots/delete", { serviceId, snapshotId });
-      });
+    if (path.startsWith("/v1/vps/")) throw new ApiError(410, "vps_resource_retired", "Use the explicit /v1/lxc or /v1/kvm resources.");
+    if (path === "/v1/lxc/instances" && request.method === "GET") return await readRoute(request, config, db, id, "lxc:read", "lxc.instances.list", (principal) => forward(config, db, principal, "lxc", "POST", "/instances", {}));
+    const lxc = path.match(/^\/v1\/lxc\/instances\/([0-9a-f-]{36})$/i);
+    if (lxc && request.method === "GET") return await readRoute(request, config, db, id, "lxc:read", "lxc.instances.read", (principal) => forward(config, db, principal, "lxc", "POST", `/instances/${lxc[1]}`, {}));
+    if (path === "/v1/kvm/instances" && request.method === "GET") return await readRoute(request, config, db, id, "kvm:read", "kvm.instances.list", (principal) => db.rest(`dashboard_services?select=id,display_name,status,plan_name,renews_at,auto_renew,created_at&user_id=eq.${principal.userId}&service_type=eq.kvm_vps&order=created_at.desc`));
+    const kvm = path.match(/^\/v1\/kvm\/instances\/([0-9a-f-]{36})(?:\/(actions|snapshots|auto-renew))?(?:\/([A-Za-z0-9._:-]{1,160}))?$/i);
+    if (kvm) {
+      const [, serviceId, area, snapshotId] = kvm;
+      if (!area && request.method === "GET") return await readRoute(request, config, db, id, "kvm:read", "kvm.instances.read", async (principal) => { await requireOwnedService(db, principal, serviceId, "kvm"); return forward(config, db, principal, "kvm", "POST", "/details", { serviceId }); });
+      if (area === "actions" && request.method === "POST") return await writeRoute(request, config, db, id, "kvm:power:write", "kvm.instances.action", path, async (principal, body) => { await requireOwnedService(db, principal, serviceId, "kvm"); return forwardMutation(config, db, principal, "kvm", "POST", "/action", { serviceId, action: body.action }); });
+      if (area === "auto-renew" && request.method === "PUT") return await writeRoute(request, config, db, id, "kvm:subscription:write", "kvm.instances.auto_renew", path, async (principal, body) => { await requireOwnedService(db, principal, serviceId, "kvm"); return forwardMutation(config, db, principal, "kvm", "POST", "/auto-renew", { serviceId, enabled: body.enabled }); });
+      if (area === "snapshots" && !snapshotId && request.method === "GET") return await readRoute(request, config, db, id, "kvm:read", "kvm.snapshots.list", async (principal) => { await requireOwnedService(db, principal, serviceId, "kvm"); return forward(config, db, principal, "kvm", "POST", "/snapshots/list", { serviceId }); });
+      if (area === "snapshots" && !snapshotId && request.method === "POST") return await writeRoute(request, config, db, id, "kvm:snapshots:write", "kvm.snapshots.create", path, async (principal, body) => { await requireOwnedService(db, principal, serviceId, "kvm"); return forwardMutation(config, db, principal, "kvm", "POST", "/snapshots/create", { serviceId, name: body.name, description: body.description }); });
+      if (area === "snapshots" && snapshotId && request.method === "PATCH") return await writeRoute(request, config, db, id, "kvm:snapshots:write", "kvm.snapshots.update", path, async (principal, body) => { await requireOwnedService(db, principal, serviceId, "kvm"); return forwardMutation(config, db, principal, "kvm", "POST", "/snapshots/update", { serviceId, snapshotId, name: body.name, description: body.description }); });
+      if (area === "snapshots" && snapshotId && request.method === "DELETE") return await writeRoute(request, config, db, id, "kvm:snapshots:write", "kvm.snapshots.delete", path, async (principal) => { await requireOwnedService(db, principal, serviceId, "kvm"); return forwardMutation(config, db, principal, "kvm", "POST", "/snapshots/delete", { serviceId, snapshotId }); });
     }
     throw new ApiError(404, "not_found", "The requested endpoint does not exist.");
   } catch (error) { return errorResponse(request, config, error, id); }

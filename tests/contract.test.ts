@@ -17,13 +17,14 @@ const config: Config = {
   emailApiUrl: "https://email.example.test",
   hostingApiUrl: "https://hosting.example.test",
   lxcApiUrl: "https://lxc.example.test",
+  kvmApiUrl: "https://lxc.example.test",
   corsOrigins: new Set(),
 };
 
 function storeFor(options: { scopes?: string[]; owner?: string; oauth?: boolean; rateLimitAllowed?: boolean; idempotencyState?: "created" | "replay" | "pending" | "conflict" } = {}): ApiStore {
   const scopes = options.scopes ?? [
     "account:read", "services:read", "domains:read", "domains:write", "domains:dns:write",
-    "email:read", "email:write", "hosting:read", "hosting:panel:access", "vps:read", "vps:write", "vps:snapshots:write",
+    "email:read", "email:write", "hosting:read", "hosting:panel:access", "kvm:read", "kvm:power:write", "kvm:snapshots:write", "kvm:subscription:write",
   ];
   const owner = options.owner ?? userId;
   const key = {
@@ -31,9 +32,10 @@ function storeFor(options: { scopes?: string[]; owner?: string; oauth?: boolean;
     user_id: owner,
     scopes,
     rate_limit_per_minute: 100,
-    expires_at: null,
+      expires_at: "2099-01-01T00:00:00.000Z",
     revoked_at: null,
     disabled_at: null,
+    allowed_ipv4: ["127.0.0.1"],
   };
   const token = {
     id: "oauth-token-id",
@@ -74,6 +76,7 @@ async function json(response: Response): Promise<any> {
 function request(path: string, init: RequestInit = {}, token = "kh_live_test"): Request {
   const headers = new Headers(init.headers);
   headers.set("Authorization", `Bearer ${token}`);
+  headers.set("X-Real-IP", "127.0.0.1");
   return new Request(`https://api.example.test${path}`, { ...init, headers });
 }
 
@@ -86,7 +89,7 @@ test("returns stable structured errors for authentication, scopes, JSON and idem
   expect(noScope.status).toBe(403);
   expect((await json(noScope)).error).toMatchObject({ code: "insufficient_scope", message: "This credential requires the domains:read scope." });
 
-  const invalidJson = await handle(request(`/v1/vps/instances/${serviceId}/actions`, {
+  const invalidJson = await handle(request(`/v1/kvm/instances/${serviceId}/actions`, {
     method: "POST",
     body: "not-json",
     headers: { "Idempotency-Key": "invalid-json-key" },
@@ -94,7 +97,7 @@ test("returns stable structured errors for authentication, scopes, JSON and idem
   expect(invalidJson.status).toBe(400);
   expect((await json(invalidJson)).error.code).toBe("invalid_json");
 
-  const noIdempotency = await handle(request(`/v1/vps/instances/${serviceId}/actions`, {
+  const noIdempotency = await handle(request(`/v1/kvm/instances/${serviceId}/actions`, {
     method: "POST",
     body: JSON.stringify({ action: "restart" }),
   }), config, storeFor());
@@ -105,19 +108,19 @@ test("returns stable structured errors for authentication, scopes, JSON and idem
   expect(limited.status).toBe(429);
   expect((await json(limited)).error.code).toBe("rate_limit_exceeded");
 
-  const conflict = await handle(request(`/v1/vps/instances/${serviceId}/actions`, {
+  const conflict = await handle(request(`/v1/kvm/instances/${serviceId}/actions`, {
     method: "POST",
     body: JSON.stringify({ action: "restart" }),
     headers: { "Idempotency-Key": "conflict-key" },
-  }), config, storeFor({ scopes: ["vps:write"], idempotencyState: "conflict" }));
+  }), config, storeFor({ scopes: ["kvm:power:write"], idempotencyState: "conflict" }));
   expect(conflict.status).toBe(409);
   expect((await json(conflict)).error.code).toBe("idempotency_key_conflict");
 
-  const replay = await handle(request(`/v1/vps/instances/${serviceId}/actions`, {
+  const replay = await handle(request(`/v1/kvm/instances/${serviceId}/actions`, {
     method: "POST",
     body: JSON.stringify({ action: "restart" }),
     headers: { "Idempotency-Key": "replay-key" },
-  }), config, storeFor({ scopes: ["vps:write"], idempotencyState: "replay" }));
+  }), config, storeFor({ scopes: ["kvm:power:write"], idempotencyState: "replay" }));
   expect(replay.status).toBe(202);
   expect(await json(replay)).toMatchObject({ data: { replayed: true } });
 });
@@ -141,9 +144,9 @@ test("serves every read route and keeps direct records tenant-scoped", async () 
       ["/v1/email/services", "email:read"],
       ["/v1/hosting/services", "hosting:read"],
       [`/v1/hosting/services/${serviceId}/stats`, "hosting:read"],
-      ["/v1/vps/instances", "vps:read"],
-      [`/v1/vps/instances/${serviceId}`, "vps:read"],
-      [`/v1/vps/instances/${serviceId}/snapshots`, "vps:read"],
+      ["/v1/kvm/instances", "kvm:read"],
+      [`/v1/kvm/instances/${serviceId}`, "kvm:read"],
+      [`/v1/kvm/instances/${serviceId}/snapshots`, "kvm:read"],
     ];
     for (const [path, scope] of routes) {
       const response = await handle(request(path), config, storeFor({ scopes: [scope] }));
@@ -173,11 +176,11 @@ test("serves every mutation route with the documented method and idempotency con
     { path: `/v1/email/services/${serviceId}/provision`, method: "POST", scope: "email:write", body: {} },
     { path: `/v1/email/services/${serviceId}/dns/sync`, method: "POST", scope: "email:write", body: {} },
     { path: `/v1/hosting/services/${serviceId}/panel-access`, method: "POST", scope: "hosting:panel:access", body: { target: "panel" } },
-    { path: `/v1/vps/instances/${serviceId}/actions`, method: "POST", scope: "vps:write", body: { action: "restart" } },
-    { path: `/v1/vps/instances/${serviceId}/auto-renew`, method: "PUT", scope: "vps:write", body: { enabled: true } },
-    { path: `/v1/vps/instances/${serviceId}/snapshots`, method: "POST", scope: "vps:snapshots:write", body: { name: "test" } },
-    { path: `/v1/vps/instances/${serviceId}/snapshots/${recordId}`, method: "PATCH", scope: "vps:snapshots:write", body: { name: "renamed" } },
-    { path: `/v1/vps/instances/${serviceId}/snapshots/${recordId}`, method: "DELETE", scope: "vps:snapshots:write", body: undefined },
+    { path: `/v1/kvm/instances/${serviceId}/actions`, method: "POST", scope: "kvm:power:write", body: { action: "restart" } },
+    { path: `/v1/kvm/instances/${serviceId}/auto-renew`, method: "PUT", scope: "kvm:subscription:write", body: { enabled: true } },
+    { path: `/v1/kvm/instances/${serviceId}/snapshots`, method: "POST", scope: "kvm:snapshots:write", body: { name: "test" } },
+    { path: `/v1/kvm/instances/${serviceId}/snapshots/${recordId}`, method: "PATCH", scope: "kvm:snapshots:write", body: { name: "renamed" } },
+    { path: `/v1/kvm/instances/${serviceId}/snapshots/${recordId}`, method: "DELETE", scope: "kvm:snapshots:write", body: undefined },
   ];
 
   try {
