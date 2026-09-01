@@ -297,8 +297,15 @@ export async function handle(request: Request, config: Config = loadConfig(), st
     }
     if (path.startsWith("/v1/vps/")) throw new ApiError(410, "vps_resource_retired", "Use the explicit /v1/lxc or /v1/kvm resources.");
     if (path === "/v1/lxc/instances" && request.method === "GET") return await readRoute(request, config, db, id, "lxc:read", "lxc.instances.list", (principal) => forward(config, db, principal, "lxc", "POST", "/instances", {}));
-    const lxc = path.match(/^\/v1\/lxc\/instances\/([0-9a-f-]{36})$/i);
-    if (lxc && request.method === "GET") return await readRoute(request, config, db, id, "lxc:read", "lxc.instances.read", (principal) => forward(config, db, principal, "lxc", "POST", `/instances/${lxc[1]}`, {}));
+    const lxc = path.match(/^\/v1\/lxc\/instances\/([0-9a-f-]{36})(?:\/(actions|metrics|snapshots))?$/i);
+    if (lxc) {
+      const [, serviceId, area] = lxc;
+      if (!area && request.method === "GET") return await readRoute(request, config, db, id, "lxc:read", "lxc.instances.read", (principal) => forward(config, db, principal, "lxc", "POST", `/instances/${serviceId}`, {}));
+      if (area === "metrics" && request.method === "GET") return await readRoute(request, config, db, id, "lxc:read", "lxc.instances.metrics", (principal) => forward(config, db, principal, "lxc", "POST", `/instances/${serviceId}/metrics`, {}));
+      if (area === "actions" && request.method === "POST") return await writeRoute(request, config, db, id, "lxc:power:write", "lxc.instances.action", path, (principal, body) => forwardMutation(config, db, principal, "lxc", "POST", `/instances/${serviceId}/actions`, { action: body.action }));
+      if (area === "snapshots" && request.method === "GET") return await readRoute(request, config, db, id, "lxc:read", "lxc.snapshots.list", (principal) => forward(config, db, principal, "lxc", "POST", `/instances/${serviceId}/snapshots`, { action: "list" }));
+      if (area === "snapshots" && request.method === "POST") return await writeRoute(request, config, db, id, "lxc:snapshots:write", "lxc.snapshots.mutate", path, (principal, body) => forwardMutation(config, db, principal, "lxc", "POST", `/instances/${serviceId}/snapshots`, { action: body.action, name: body.name }));
+    }
     if (path === "/v1/kvm/instances" && request.method === "GET") return await readRoute(request, config, db, id, "kvm:read", "kvm.instances.list", (principal) => db.rest(`dashboard_services?select=id,display_name,status,plan_name,renews_at,auto_renew,created_at&user_id=eq.${principal.userId}&service_type=eq.kvm_vps&order=created_at.desc`));
     const kvm = path.match(/^\/v1\/kvm\/instances\/([0-9a-f-]{36})(?:\/(actions|snapshots|auto-renew))?(?:\/([A-Za-z0-9._:-]{1,160}))?$/i);
     if (kvm) {
