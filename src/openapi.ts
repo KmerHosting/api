@@ -13,7 +13,7 @@ export const openapi = {
   info: {
     title: "KmerHosting API",
     version: "v1",
-    description: "Public API for resources owned by the authenticated KmerHosting account. Provider credentials, billing, purchases, account administration, destructive service operations and secrets are intentionally unavailable.",
+    description: "Public API for resources owned by the authenticated KmerHosting account. Sensitive infrastructure operations require an explicit scope, an IPv4 allowlist and an idempotency key. Provider credentials, purchases and account administration remain unavailable.",
   },
   servers: [{ url: "https://api.kmerhosting.com", description: "Production" }],
   security: [{ bearerAuth: [] }],
@@ -47,6 +47,11 @@ export const openapi = {
     "/v1/lxc/instances/{serviceId}/metrics": { get: { tags: ["LXC"], summary: "Get LXC metrics for the last 24 hours", description: "Requires `lxc:read`.", parameters: [{ ...id, name: "serviceId" }], responses: { "200": response("LXC metrics") } } },
     "/v1/lxc/instances/{serviceId}/actions": { post: { tags: ["LXC"], parameters: [{ ...id, name: "serviceId" }, { $ref: "#/components/parameters/IdempotencyKey" }], ...mutation("Control an LXC instance", "lxc:power:write", { type: "object", required: ["action"], properties: { action: { type: "string", enum: ["start", "restart", "freeze", "stop"] } } }) } },
     "/v1/lxc/instances/{serviceId}/snapshots": { get: { tags: ["LXC"], summary: "List LXC snapshots", description: "Requires `lxc:read`.", parameters: [{ ...id, name: "serviceId" }], responses: { "200": response("LXC snapshots") } }, post: { tags: ["LXC"], parameters: [{ ...id, name: "serviceId" }, { $ref: "#/components/parameters/IdempotencyKey" }], ...mutation("Create, delete or restore an LXC snapshot", "lxc:snapshots:write", { type: "object", required: ["action", "name"], properties: { action: { type: "string", enum: ["create", "delete", "restore"] }, name: { type: "string", pattern: "^[a-z0-9][a-z0-9-]{0,47}$" } } }) } },
+    "/v1/lxc/instances/{serviceId}/password": { post: { tags: ["LXC"], parameters: [{ ...id, name: "serviceId" }, { $ref: "#/components/parameters/IdempotencyKey" }], ...mutation("Change the LXC root password", "lxc:credentials:write", { type: "object", required: ["password"], additionalProperties: false, properties: { password: { type: "string", minLength: 10, maxLength: 128, writeOnly: true } } }) } },
+    "/v1/lxc/instances/{serviceId}/reinstall": { post: { tags: ["LXC"], parameters: [{ ...id, name: "serviceId" }, { $ref: "#/components/parameters/IdempotencyKey" }], ...mutation("Erase and reinstall an LXC instance", "lxc:reinstall", { type: "object", required: ["distribution"], additionalProperties: false, properties: { distribution: { type: "string", minLength: 1, maxLength: 80 } } }, "Reinstallation queued") } },
+    "/v1/lxc/instances/{serviceId}/terminal-ticket": { post: { tags: ["LXC"], parameters: [{ ...id, name: "serviceId" }, { $ref: "#/components/parameters/IdempotencyKey" }], ...mutation("Create a short-lived LXC terminal ticket", "lxc:terminal:access", { type: "object", additionalProperties: false }, "Terminal ticket valid for 60 seconds") } },
+    "/v1/lxc/instances/{serviceId}/auto-renew": { put: { tags: ["LXC"], parameters: [{ ...id, name: "serviceId" }, { $ref: "#/components/parameters/IdempotencyKey" }], ...mutation("Set LXC auto-renew", "lxc:subscription:write", { type: "object", required: ["enabled"], additionalProperties: false, properties: { enabled: { type: "boolean" } } }) } },
+    "/v1/lxc/instances/{serviceId}/billing-period": { put: { tags: ["LXC"], parameters: [{ ...id, name: "serviceId" }, { $ref: "#/components/parameters/IdempotencyKey" }], ...mutation("Set the LXC billing period", "lxc:subscription:write", { type: "object", required: ["billingMonths"], additionalProperties: false, properties: { billingMonths: { type: "integer", enum: [1, 3, 6, 12] } } }) } },
     "/v1/kvm/instances": { get: { tags: ["KVM"], summary: "List owned KVM instances", description: "Requires `kvm:read`.", responses: { "200": response("KVM instances") } } },
     "/v1/kvm/instances/{serviceId}": { get: { tags: ["KVM"], summary: "Get KVM details", description: "Requires `kvm:read`.", parameters: [{ ...id, name: "serviceId" }], responses: { "200": response("KVM details") } } },
     "/v1/kvm/instances/{serviceId}/actions": { post: { tags: ["KVM"], parameters: [{ ...id, name: "serviceId" }, { $ref: "#/components/parameters/IdempotencyKey" }], ...mutation("Control a KVM instance", "kvm:power:write", { type: "object", required: ["action"], properties: { action: { type: "string", enum: ["start", "stop", "shutdown", "restart"] } } }) } },
@@ -75,3 +80,15 @@ export const openapi = {
     responses: { Error: { description: "API error", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } } },
   },
 } as const;
+
+type OpenApiOperation = { operationId?: string };
+const httpMethods = new Set(["get", "post", "put", "patch", "delete"]);
+for (const [path, pathItem] of Object.entries(openapi.paths)) {
+  for (const [method, operation] of Object.entries(pathItem)) {
+    if (!httpMethods.has(method)) continue;
+    (operation as OpenApiOperation).operationId = `${method}_${path}`
+      .replace(/[{}]/g, "")
+      .replace(/[^A-Za-z0-9]+/g, "_")
+      .replace(/^_|_$/g, "");
+  }
+}

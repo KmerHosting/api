@@ -297,7 +297,7 @@ export async function handle(request: Request, config: Config = loadConfig(), st
     }
     if (path.startsWith("/v1/vps/")) throw new ApiError(410, "vps_resource_retired", "Use the explicit /v1/lxc or /v1/kvm resources.");
     if (path === "/v1/lxc/instances" && request.method === "GET") return await readRoute(request, config, db, id, "lxc:read", "lxc.instances.list", (principal) => forward(config, db, principal, "lxc", "POST", "/instances", {}));
-    const lxc = path.match(/^\/v1\/lxc\/instances\/([0-9a-f-]{36})(?:\/(actions|metrics|snapshots))?$/i);
+    const lxc = path.match(/^\/v1\/lxc\/instances\/([0-9a-f-]{36})(?:\/(actions|metrics|snapshots|password|reinstall|terminal-ticket|auto-renew|billing-period))?$/i);
     if (lxc) {
       const [, serviceId, area] = lxc;
       if (!area && request.method === "GET") return await readRoute(request, config, db, id, "lxc:read", "lxc.instances.read", (principal) => forward(config, db, principal, "lxc", "POST", `/instances/${serviceId}`, {}));
@@ -305,6 +305,11 @@ export async function handle(request: Request, config: Config = loadConfig(), st
       if (area === "actions" && request.method === "POST") return await writeRoute(request, config, db, id, "lxc:power:write", "lxc.instances.action", path, (principal, body) => forwardMutation(config, db, principal, "lxc", "POST", `/instances/${serviceId}/actions`, { action: body.action }));
       if (area === "snapshots" && request.method === "GET") return await readRoute(request, config, db, id, "lxc:read", "lxc.snapshots.list", (principal) => forward(config, db, principal, "lxc", "POST", `/instances/${serviceId}/snapshots`, { action: "list" }));
       if (area === "snapshots" && request.method === "POST") return await writeRoute(request, config, db, id, "lxc:snapshots:write", "lxc.snapshots.mutate", path, (principal, body) => forwardMutation(config, db, principal, "lxc", "POST", `/instances/${serviceId}/snapshots`, { action: body.action, name: body.name }));
+      if (area === "password" && request.method === "POST") return await writeRoute(request, config, db, id, "lxc:credentials:write", "lxc.instances.password", path, (principal, body) => forwardMutation(config, db, principal, "lxc", "POST", `/instances/${serviceId}/root-password`, { password: body.password }));
+      if (area === "reinstall" && request.method === "POST") return await writeRoute(request, config, db, id, "lxc:reinstall", "lxc.instances.reinstall", path, (principal, body) => forwardMutation(config, db, principal, "lxc", "POST", `/instances/${serviceId}/reinstall`, { distribution: body.distribution }));
+      if (area === "terminal-ticket" && request.method === "POST") return await writeRoute(request, config, db, id, "lxc:terminal:access", "lxc.instances.terminal_ticket", path, (principal) => forwardMutation(config, db, principal, "lxc", "POST", `/instances/${serviceId}/terminal-ticket`, {}));
+      if (area === "auto-renew" && request.method === "PUT") return await writeRoute(request, config, db, id, "lxc:subscription:write", "lxc.instances.auto_renew", path, (principal, body) => forwardMutation(config, db, principal, "lxc", "POST", `/instances/${serviceId}/subscription`, { action: "set_auto_renew", enabled: body.enabled }));
+      if (area === "billing-period" && request.method === "PUT") return await writeRoute(request, config, db, id, "lxc:subscription:write", "lxc.instances.billing_period", path, (principal, body) => forwardMutation(config, db, principal, "lxc", "POST", `/instances/${serviceId}/subscription`, { action: "set_billing_period", billingMonths: body.billingMonths }));
     }
     if (path === "/v1/kvm/instances" && request.method === "GET") return await readRoute(request, config, db, id, "kvm:read", "kvm.instances.list", (principal) => db.rest(`dashboard_services?select=id,display_name,status,plan_name,renews_at,auto_renew,created_at&user_id=eq.${principal.userId}&service_type=eq.kvm_vps&order=created_at.desc`));
     const kvm = path.match(/^\/v1\/kvm\/instances\/([0-9a-f-]{36})(?:\/(actions|snapshots|auto-renew|password|renew|cancel|keep-service))?(?:\/(rollback|[A-Za-z0-9._:-]{1,160}))?$/i);

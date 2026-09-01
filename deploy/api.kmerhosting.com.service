@@ -1,5 +1,5 @@
 [Unit]
-Description=KmerHosting Public API
+Description=api.kmerhosting.com public API
 After=network-online.target
 Wants=network-online.target
 
@@ -7,8 +7,8 @@ Wants=network-online.target
 Type=simple
 User=kmerapi
 Group=kmerapi
-WorkingDirectory=/opt/kmerhosting-api
-EnvironmentFile=/etc/kmerhosting-api.env
+WorkingDirectory=/opt/api.kmerhosting.com
+EnvironmentFile=/etc/api.kmerhosting.com.env
 ExecStart=/usr/local/bin/bun run start
 Restart=always
 RestartSec=3
@@ -16,7 +16,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/opt/kmerhosting-api
+ReadWritePaths=/opt/api.kmerhosting.com
 
 [Install]
 WantedBy=multi-user.target

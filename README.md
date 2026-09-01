@@ -30,8 +30,8 @@ Keep API keys on your server. Never use them in browser code, mobile apps, repos
 - Domains, DNS and nameservers
 - Email Hosting
 - Shared Hosting
-- LXC VPS
-- Service status and details
+- LXC VPS inventory, metrics, power, snapshots, credentials, reinstall, terminal tickets and subscription settings
+- Existing KVM VPS inventory, power, credentials, lifecycle and snapshots
 
 Supported actions are limited to resources owned by the authenticated account.
 
@@ -45,7 +45,7 @@ curl -X POST https://api.kmerhosting.com/v1/example \
   -H "Idempotency-Key: a-unique-request-id"
 ```
 
-API activity is available with the `account:usage:read` scope at `GET /v1/account/api-usage`; it includes product and non-product routes, operation IDs, statuses and source IPv4 values. The API does not expose passwords, provider credentials, billing operations, transfers, ownership changes, destructive infrastructure operations or internal administration tools.
+API activity is available with the `account:usage:read` scope at `GET /v1/account/api-usage`; it includes product and non-product routes, operation IDs, statuses and source IPv4 values. Dangerous infrastructure operations require their dedicated scope and an API key restricted to trusted IPv4 addresses. Root-password values and temporary access secrets are accepted or returned only by their specific short-lived operation and are never stored in activity logs. The API does not expose provider credentials, purchases, transfers, ownership changes, raw provider proxies, or internal administration tools.
 
 ## Documentation
 

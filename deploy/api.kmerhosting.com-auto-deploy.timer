@@ -1,0 +1,12 @@
+[Unit]
+Description=Check api.kmerhosting.com for updates every two minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+AccuracySec=15s
+Persistent=true
+Unit=api.kmerhosting.com-auto-deploy.service
+
+[Install]
+WantedBy=timers.target

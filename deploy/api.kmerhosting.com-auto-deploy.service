@@ -1,0 +1,7 @@
+[Unit]
+Description=Deploy the latest verified api.kmerhosting.com main branch
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/api.kmerhosting.com-deploy
