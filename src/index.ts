@@ -240,6 +240,18 @@ export async function handle(request: Request, config: Config = loadConfig(), st
       if (!rows[0]) throw new ApiError(404, "account_not_found", "The account was not found.");
       return rows[0];
     });
+    if (path === "/v1/account/api-usage" && request.method === "GET") return await readRoute(request, config, db, id, "account:usage:read", "account.api_usage", async (principal) => {
+      const rows = await db.rest<Record<string, unknown>[]>(`dashboard_api_key_usage?select=id,request_id,product,service,operation,status,billable,cost_usd_micros,balance_after_usd_micros,client_ipv4,user_agent,http_method,route,http_status,request_kind,operation_id,occurred_at&user_id=eq.${principal.userId}&order=occurred_at.desc&limit=500`);
+      return {
+        entries: rows,
+        summary: {
+          total: rows.length,
+          successful: rows.filter((entry) => entry.status === "succeeded").length,
+          rejected: rows.filter((entry) => entry.status !== "succeeded").length,
+          distinctIpv4: new Set(rows.map((entry) => String(entry.client_ipv4 || "")).filter(Boolean)).size,
+        },
+      };
+    });
     if (path === "/v1/services" && request.method === "GET") return await readRoute(request, config, db, id, "services:read", "services.list", (principal) => db.rest(`dashboard_services?select=id,service_type,source_system,source_record_id,display_name,status,management_mode,plan_name,renewal_price,renewal_currency,billing_months,activated_at,renews_at,auto_renew,grace_ends_at,cancellation_requested_at,cancel_at,created_at,updated_at&user_id=eq.${principal.userId}&order=created_at.desc`));
     const service = path.match(/^\/v1\/services\/([0-9a-f-]{36})$/i);
     if (service && request.method === "GET") return await readRoute(request, config, db, id, "services:read", "services.read", async (principal) => {

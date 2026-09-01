@@ -26,7 +26,7 @@ Keep API keys on your server. Never use them in browser code, mobile apps, repos
 
 ## Available resources
 
-- Account and services
+- Account, API activity and services
 - Domains, DNS and nameservers
 - Email Hosting
 - Shared Hosting
@@ -45,7 +45,7 @@ curl -X POST https://api.kmerhosting.com/v1/example \
   -H "Idempotency-Key: a-unique-request-id"
 ```
 
-The API does not expose passwords, provider credentials, billing operations, transfers, ownership changes, destructive infrastructure operations or internal administration tools.
+API activity is available with the `account:usage:read` scope at `GET /v1/account/api-usage`; it includes product and non-product routes, operation IDs, statuses and source IPv4 values. The API does not expose passwords, provider credentials, billing operations, transfers, ownership changes, destructive infrastructure operations or internal administration tools.
 
 ## Documentation
 

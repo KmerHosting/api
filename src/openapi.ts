@@ -21,6 +21,7 @@ export const openapi = {
   paths: {
     "/health": { get: { security: [], summary: "API health", responses: { "200": { description: "Healthy" } } } },
     "/v1/account": { get: { tags: ["Account"], summary: "Get the authenticated account", description: "Requires `account:read`.", responses: { "200": response("Account"), "401": { $ref: "#/components/responses/Error" } } } },
+    "/v1/account/api-usage": { get: { tags: ["Account"], summary: "List API request activity", description: "Requires `account:usage:read`. Includes product and non-product operations, status, route, operation id and client IPv4.", responses: { "200": response("API usage") } } },
     "/v1/services": { get: { tags: ["Services"], summary: "List all customer services", description: "Requires `services:read`.", responses: { "200": response("Services") } } },
     "/v1/services/{serviceId}": { get: { tags: ["Services"], summary: "Get one customer service", description: "Requires `services:read`.", parameters: [{ ...id, name: "serviceId" }], responses: { "200": response("Service"), "404": { $ref: "#/components/responses/Error" } } } },
     "/v1/domains": { get: { tags: ["Domains"], summary: "List owned domains", description: "Requires `domains:read`.", responses: { "200": response("Domains") } } },

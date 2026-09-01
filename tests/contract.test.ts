@@ -154,6 +154,7 @@ test("serves every read route and keeps direct records tenant-scoped", async () 
   try {
     const routes: Array<[string, string]> = [
       ["/v1/account", "account:read"],
+      ["/v1/account/api-usage", "account:usage:read"],
       ["/v1/services", "services:read"],
       [`/v1/services/${serviceId}`, "services:read"],
       ["/v1/domains", "domains:read"],
