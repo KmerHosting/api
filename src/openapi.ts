@@ -8,6 +8,45 @@ const mutation = (summary: string, scope: string, body: Record<string, unknown>,
   responses: { "200": response(description), "201": response(description), "202": response(description), "400": { $ref: "#/components/responses/Error" }, "401": { $ref: "#/components/responses/Error" }, "403": { $ref: "#/components/responses/Error" }, "409": { $ref: "#/components/responses/Error" } },
 });
 
+const publicDomainSearchServers = [{ url: "https://domain.kmerhosting.com", description: "Public domain search service" }];
+const publicDomainSearchParameters = [
+  { in: "query", name: "domain", description: "A domain to check. Repeat this parameter for a bulk search.", schema: { type: "string", minLength: 3, maxLength: 253, examples: ["example.com"] } },
+  { in: "query", name: "domains", description: "Comma-, whitespace- or newline-separated domains. Repeat this parameter when useful.", schema: { type: "string", minLength: 3, maxLength: 5099, examples: ["example.com,example.org,example.cm"] } },
+  { in: "query", name: "q", description: "Alias for `domain` for simple integrations.", schema: { type: "string", minLength: 3, maxLength: 253, examples: ["example.com"] } },
+];
+const publicDomainSearchRequestBody = json({
+  oneOf: [
+    { type: "object", required: ["domains"], additionalProperties: false, properties: { domains: { type: "array", minItems: 1, maxItems: 20, uniqueItems: true, items: { type: "string", minLength: 3, maxLength: 253 } } } },
+    { type: "object", required: ["domain"], additionalProperties: false, properties: { domain: { type: "string", minLength: 3, maxLength: 253 } } },
+    { type: "object", required: ["domainName"], additionalProperties: false, properties: { domainName: { type: "string", minLength: 3, maxLength: 253 } } },
+    { type: "object", required: ["q"], additionalProperties: false, properties: { q: { type: "string", minLength: 3, maxLength: 253 } } },
+  ],
+});
+const publicDomainSearchResponses = {
+  "200": { description: "Availability results and current customer pricing.", content: { "application/json": { schema: { $ref: "#/components/schemas/PublicDomainSearchResponse" } } } },
+  "400": { description: "No valid domain was supplied.", content: { "application/json": { schema: { $ref: "#/components/schemas/PublicDomainSearchError" } } } },
+  "429": { description: "The public IP allowance was exceeded. Retry after the supplied delay.", headers: { "Retry-After": { schema: { type: "integer" } }, "X-RateLimit-Limit": { schema: { type: "integer" } }, "X-RateLimit-Remaining": { schema: { type: "integer" } } }, content: { "application/json": { schema: { $ref: "#/components/schemas/PublicDomainSearchError" } } } },
+  "502": { description: "The registrar service is temporarily unavailable.", content: { "application/json": { schema: { $ref: "#/components/schemas/PublicDomainSearchError" } } } },
+};
+const publicDomainSearchGet = {
+  servers: publicDomainSearchServers,
+  security: [],
+  tags: ["Domain Search"],
+  summary: "Check public domain availability",
+  description: "Unauthenticated public search. Send one domain with `domain` or `q`, or up to 20 domains with repeated `domain`/`domains` parameters or a comma-separated `domains` value. The allowance is 20 requests per client IP in a rolling 60-second window; one bulk request counts as one request.",
+  parameters: publicDomainSearchParameters,
+  responses: publicDomainSearchResponses,
+};
+const publicDomainSearchPost = {
+  servers: publicDomainSearchServers,
+  security: [],
+  tags: ["Domain Search"],
+  summary: "Check public domain availability in bulk",
+  description: "Unauthenticated public search. Send an array of up to 20 domains, or one scalar `domain`, `domainName` or `q` value. One bulk request counts as one request against the client IP allowance.",
+  requestBody: publicDomainSearchRequestBody,
+  responses: publicDomainSearchResponses,
+};
+
 export const openapi = {
   openapi: "3.1.0",
   info: {
@@ -17,9 +56,11 @@ export const openapi = {
   },
   servers: [{ url: "https://api.kmerhosting.com", description: "Production" }],
   security: [{ bearerAuth: [] }],
-  tags: [{ name: "Account" }, { name: "Services" }, { name: "Domains" }, { name: "Email Hosting" }, { name: "Shared Hosting" }, { name: "LXC" }, { name: "KVM" }, { name: "ConvertSuite" }],
+  tags: [{ name: "Account" }, { name: "Services" }, { name: "Domains" }, { name: "Domain Search" }, { name: "Email Hosting" }, { name: "Shared Hosting" }, { name: "LXC" }, { name: "KVM" }, { name: "ConvertSuite" }],
   paths: {
     "/health": { get: { security: [], summary: "API health", responses: { "200": { description: "Healthy" } } } },
+    "/api/domain-search": { get: { ...publicDomainSearchGet }, post: { ...publicDomainSearchPost } },
+    "/api/domain/domain-search-fast": { get: { ...publicDomainSearchGet }, post: { ...publicDomainSearchPost } },
     "/v1/account": { get: { tags: ["Account"], summary: "Get the authenticated account", description: "Requires `account:read`.", responses: { "200": response("Account"), "401": { $ref: "#/components/responses/Error" } } } },
     "/v1/account/api-usage": { get: { tags: ["Account"], summary: "List API request activity", description: "Requires `account:usage:read`. Includes product and non-product operations, status, route, operation id and client IPv4.", responses: { "200": response("API usage") } } },
     "/v1/convertsuite/tools": { get: { tags: ["ConvertSuite"], summary: "List ConvertSuite tools", description: "Requires `convertsuite:read`. Available to API-key and OAuth credentials with the ConvertSuite capability.", responses: { "200": response("ConvertSuite tools"), "401": { $ref: "#/components/responses/Error" }, "403": { $ref: "#/components/responses/Error" } } } },
@@ -81,6 +122,12 @@ export const openapi = {
     schemas: {
       Envelope: { type: "object", required: ["data", "request_id"], properties: { data: {}, request_id: { type: "string", format: "uuid" } } },
       Error: { type: "object", required: ["error"], properties: { error: { type: "object", required: ["code", "message", "request_id"], properties: { code: { type: "string" }, message: { type: "string" }, request_id: { type: "string", format: "uuid" } } } } },
+      PublicDomainSearchError: { type: "object", required: ["error", "message"], properties: { error: { type: "string", examples: ["search_rate_limited"] }, message: { type: "string" } } },
+      PublicDomainProviderAttribute: { type: "object", required: ["key", "options", "isRequired"], properties: { key: { type: "string" }, type: { type: "string" }, options: { type: "array", items: { type: "string" } }, isRequired: { type: "boolean" }, description: { type: "string" } } },
+      PublicDomainCatalogPrice: { type: "object", required: ["tld", "registration_price_usd", "renewal_price_usd", "transfer_price_usd"], properties: { tld: { type: "string", examples: [".com"] }, popular: { type: "boolean" }, is_promo: { type: "boolean" }, registration_price_usd: { type: ["number", "null"] }, renewal_price_usd: { type: ["number", "null"] }, transfer_price_usd: { type: ["number", "null"] }, restore_price_usd: { type: ["number", "null"] }, min_years: { type: "integer" }, max_years: { type: "integer" }, registration_periods: { type: "array", items: { type: "integer" } }, renewal_periods: { type: "array", items: { type: "integer" } }, transfer_periods: { type: "array", items: { type: "integer" } }, supports_privacy: { type: "boolean" }, provider_attributes: { type: "array", items: { $ref: "#/components/schemas/PublicDomainProviderAttribute" } } } },
+      PublicDomainRegistrarResult: { type: "object", required: ["domainName", "available", "isAvailable", "status", "availabilitySource"], properties: { domainName: { type: "string" }, available: { type: "boolean" }, isAvailable: { type: "boolean" }, status: { type: "string", enum: ["available", "unavailable", "unknown", "unsupported"] }, isPremium: { type: "boolean" }, customerPriceUsd: { type: ["number", "null"] }, availabilitySource: { type: "string", enum: ["ote", "production"] }, error: { type: ["string", "null"] } } },
+      PublicDomainSearchResult: { type: "object", required: ["domainName", "registrar", "price"], properties: { domainName: { type: "string" }, registrar: { $ref: "#/components/schemas/PublicDomainRegistrarResult" }, price: { anyOf: [{ $ref: "#/components/schemas/PublicDomainCatalogPrice" }, { type: "null" }] } } },
+      PublicDomainSearchResponse: { type: "object", required: ["results", "bulkSearch", "availabilitySource", "registrarEnvironment", "requested", "accepted", "invalid", "unsupported", "generatedAt"], properties: { results: { type: "array", maxItems: 20, items: { $ref: "#/components/schemas/PublicDomainSearchResult" } }, bulkSearch: { type: "boolean" }, availabilitySource: { type: "string", enum: ["ote", "production"] }, registrarEnvironment: { type: "string", enum: ["ote", "production"] }, requested: { type: "integer" }, accepted: { type: "integer", maximum: 20 }, invalid: { type: "array", items: { type: "string" } }, unsupported: { type: "integer" }, generatedAt: { type: "string", format: "date-time" } } },
     },
     responses: { Error: { description: "API error", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } } },
   },

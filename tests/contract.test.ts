@@ -87,9 +87,13 @@ test("serves the interactive API documentation and OpenAPI contract", async () =
   const schema = await handle(new Request("https://api.example.test/openapi.json"), config, storeFor());
   expect(schema.status).toBe(200);
   expect(schema.headers.get("content-type")).toContain("application/json");
-  const document = await schema.json() as { openapi?: string; info?: { title?: string } };
+  const document = await schema.json() as { openapi?: string; info?: { title?: string }; paths?: Record<string, any> };
   expect(document.openapi).toBe("3.1.0");
   expect(document.info?.title).toBe("KmerHosting API");
+  expect(document.paths?.["/api/domain-search"]?.get?.servers?.[0]?.url).toBe("https://domain.kmerhosting.com");
+  expect(document.paths?.["/api/domain-search"]?.get?.security).toEqual([]);
+  expect(document.paths?.["/api/domain-search"]?.post?.requestBody?.content?.["application/json"]).toBeDefined();
+  expect(document.paths?.["/api/domain/domain-search-fast"]?.get).toBeDefined();
 });
 
 function request(path: string, init: RequestInit = {}, token = "kh_live_test"): Request {
