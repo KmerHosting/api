@@ -1,6 +1,6 @@
 -- Run this migration before deploying the API gateway. Existing keys receive read-only scopes.
 alter table public.dashboard_api_keys
-  add column if not exists scopes text[] not null default array['account:read','services:read','domains:read','email:read','hosting:read','vps:read']::text[],
+  add column if not exists scopes text[] not null default array['account:read','services:read','domains:read','email:read','hosting:read','vps:read','convertsuite:read','convertsuite:process']::text[],
   add column if not exists rate_limit_per_minute integer not null default 60;
 
 alter table public.dashboard_api_keys

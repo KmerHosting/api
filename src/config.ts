@@ -10,6 +10,7 @@ export type Config = {
   hostingApiUrl: string;
   lxcApiUrl: string;
   kvmApiUrl: string;
+  convertsuiteApiUrl: string;
   corsOrigins: Set<string>;
 };
 
@@ -41,6 +42,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     hostingApiUrl: (env.HOSTING_API_URL ?? `${required("SUPABASE_URL", env.SUPABASE_URL).replace(/\/$/, "")}/functions/v1/hosting-api-gateway`).replace(/\/$/, ""),
     lxcApiUrl: (env.LXC_API_URL ?? "https://lxc.kmerhosting.com/api/internal").replace(/\/$/, ""),
     kvmApiUrl: (env.KVM_API_URL ?? `${required("SUPABASE_URL", env.SUPABASE_URL).replace(/\/$/, "")}/functions/v1/dashboard-kvm-provider`).replace(/\/$/, ""),
+    convertsuiteApiUrl: (env.CONVERTSUITE_API_URL ?? "https://api.convertsuite.pro").replace(/\/$/, ""),
     corsOrigins: new Set(origins),
   };
 }

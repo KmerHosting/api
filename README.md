@@ -32,6 +32,7 @@ Keep API keys on your server. Never use them in browser code, mobile apps, repos
 - Shared Hosting
 - LXC VPS inventory, metrics, power, snapshots, credentials, reinstall, terminal tickets and subscription settings
 - Existing KVM VPS inventory, power, credentials, lifecycle and snapshots
+- ConvertSuite tools and REST processing jobs (Pro and Business ConvertSuite plans)
 
 Supported actions are limited to resources owned by the authenticated account.
 
@@ -46,6 +47,12 @@ curl -X POST https://api.kmerhosting.com/v1/example \
 ```
 
 API activity is available with the `account:usage:read` scope at `GET /v1/account/api-usage`; it includes product and non-product routes, operation IDs, statuses and source IPv4 values. Dangerous infrastructure operations require their dedicated scope and an API key restricted to trusted IPv4 addresses. Root-password values and temporary access secrets are accepted or returned only by their specific short-lived operation and are never stored in activity logs. The API does not expose provider credentials, purchases, transfers, ownership changes, raw provider proxies, or internal administration tools.
+
+### ConvertSuite REST API
+
+ConvertSuite REST processing is available to active Pro and Business ConvertSuite plans. API keys need the `convertsuite:read` and `convertsuite:process` capabilities. Start with `GET /v1/convertsuite/tools`, then call `POST /v1/convertsuite/prepare-upload` with an `Idempotency-Key`; upload the returned signed URLs, start the job, and poll `GET /v1/convertsuite/jobs/{jobId}`. A successful prepare call reserves exactly one ConvertSuite operation, regardless of the number of input files. Job status, start and cancel requests do not reserve additional operations.
+
+The full contract, including every ConvertSuite route and schema, is available in [Swagger UI](https://api.kmerhosting.com/docs) and [OpenAPI](https://api.kmerhosting.com/openapi.json).
 
 ## Documentation
 

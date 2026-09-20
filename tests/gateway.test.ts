@@ -15,6 +15,7 @@ const config: Config = {
   hostingApiUrl: "https://hosting.example.test",
   lxcApiUrl: "https://lxc.example.test",
   kvmApiUrl: "https://lxc.example.test",
+  convertsuiteApiUrl: "https://convertsuite.example.test",
   corsOrigins: new Set(),
 };
 
@@ -39,6 +40,7 @@ test("signs product requests with the gateway contract and never sends a user AP
     const headers = new Headers(captured?.init?.headers);
     expect(headers.get("Authorization")).toBe("Bearer service-role-test");
     expect(headers.get("X-KmerHosting-Gateway-User-Id")).toBe("external-user-1");
+    expect(headers.get("X-KmerHosting-Gateway-Method")).toBe("POST");
     expect(headers.get("X-KmerHosting-Gateway-Signature")).toMatch(/^[a-f0-9]{64}$/);
     expect(headers.get("X-KmerHosting-Gateway-Timestamp")).toMatch(/^\d+$/);
     expect(headers.get("X-KmerHosting-Gateway-Request-Id")).toMatch(/^[0-9a-f-]{36}$/);

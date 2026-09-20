@@ -1,7 +1,7 @@
 import type { Config } from "./config";
 import { ApiError, sha256 } from "./security";
 
-export type Product = "domain" | "email" | "hosting" | "lxc" | "kvm";
+export type Product = "domain" | "email" | "hosting" | "lxc" | "kvm" | "convertsuite";
 
 type GatewayCall = {
   product: Product;
@@ -17,7 +17,9 @@ function baseUrl(config: Config, product: Product): string {
   return product === "domain" ? config.domainApiUrl
     : product === "email" ? config.emailApiUrl
     : product === "hosting" ? config.hostingApiUrl
-    : product === "lxc" ? config.lxcApiUrl : config.kvmApiUrl;
+    : product === "lxc" ? config.lxcApiUrl
+    : product === "kvm" ? config.kvmApiUrl
+    : config.convertsuiteApiUrl;
 }
 
 async function hmac(secret: string, value: string): Promise<string> {
@@ -45,6 +47,7 @@ export async function callProduct(config: Config, call: GatewayCall): Promise<Pr
       "X-KmerHosting-Gateway-Timestamp": timestamp,
       "X-KmerHosting-Gateway-Request-Id": requestId,
       "X-KmerHosting-Gateway-User-Id": call.productUserId,
+      "X-KmerHosting-Gateway-Method": call.method.toUpperCase(),
       "X-KmerHosting-Gateway-Signature": signature,
       "X-KmerHosting-Gateway-Body-Hash": bodyHash,
       "X-KmerHosting-Gateway-Path": call.path,
