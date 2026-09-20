@@ -166,7 +166,7 @@ function idempotencyKey(request: Request): string {
   return key;
 }
 
-async function writeRoute(request: Request, config: Config, db: ApiStore, id: string, scope: string, operation: string, path: string, work: (principal: Principal, body: Record<string, unknown>) => Promise<MutationOutcome>): Promise<Response> {
+async function writeRoute(request: Request, config: Config, db: ApiStore, id: string, scope: string, operation: string, path: string, work: (principal: Principal, body: Record<string, unknown>, idempotency: string) => Promise<MutationOutcome>): Promise<Response> {
   const principal = await authenticate(request, db);
   try {
     requireScope(principal.kind === "api_key" ? principal.key.scopes : principal.token.scopes, scope);
@@ -190,7 +190,7 @@ async function writeRoute(request: Request, config: Config, db: ApiStore, id: st
   if (claim.state === "replay") return responseJson(request, config, claim.response_body, claim.response_status ?? 200, id);
   let response: { status: number; body: unknown };
   try {
-    const outcome = await work(principal, body);
+    const outcome = await work(principal, body, key);
     const status = outcome.status === 201 || outcome.status === 202 ? outcome.status : 200;
     response = { status, body: { data: outcome.data, request_id: id } };
     await recordUsage(db, principal, id, operation, "succeeded", request, status === 202 ? "operation" : "mutation", status).catch(() => undefined);
@@ -252,6 +252,15 @@ export async function handle(request: Request, config: Config = loadConfig(), st
         },
       };
     });
+    if (path === "/v1/convertsuite/tools" && request.method === "GET") return await readRoute(request, config, db, id, "convertsuite:read", "convertsuite.tools.list", (principal) => forward(config, db, principal, "convertsuite", "GET", "/v1/tools"));
+    if (path === "/v1/convertsuite/prepare-upload" && request.method === "POST") return await writeRoute(request, config, db, id, "convertsuite:process", "convertsuite.jobs.prepare", path, (principal, body, key) => forwardMutation(config, db, principal, "convertsuite", "POST", "/v1/prepare-upload", { ...body, idempotencyKey: key }));
+    const convertsuiteJob = path.match(/^\/v1\/convertsuite\/jobs\/([0-9a-f-]{36})(?:\/(start|cancel))?$/i);
+    if (convertsuiteJob) {
+      const [, jobId, action] = convertsuiteJob;
+      if (!action && request.method === "GET") return await readRoute(request, config, db, id, "convertsuite:read", "convertsuite.jobs.read", (principal) => forward(config, db, principal, "convertsuite", "GET", `/v1/jobs/${jobId}`));
+      if (action === "start" && request.method === "POST") return await writeRoute(request, config, db, id, "convertsuite:process", "convertsuite.jobs.start", path, (principal) => forwardMutation(config, db, principal, "convertsuite", "POST", `/v1/jobs/${jobId}/start`, {}));
+      if (action === "cancel" && request.method === "POST") return await writeRoute(request, config, db, id, "convertsuite:process", "convertsuite.jobs.cancel", path, (principal) => forwardMutation(config, db, principal, "convertsuite", "POST", `/v1/jobs/${jobId}/cancel`, {}));
+    }
     if (path === "/v1/services" && request.method === "GET") return await readRoute(request, config, db, id, "services:read", "services.list", (principal) => db.rest(`dashboard_services?select=id,service_type,source_system,source_record_id,display_name,status,management_mode,plan_name,renewal_price,renewal_currency,billing_months,activated_at,renews_at,auto_renew,grace_ends_at,cancellation_requested_at,cancel_at,created_at,updated_at&user_id=eq.${principal.userId}&order=created_at.desc`));
     const service = path.match(/^\/v1\/services\/([0-9a-f-]{36})$/i);
     if (service && request.method === "GET") return await readRoute(request, config, db, id, "services:read", "services.read", async (principal) => {
