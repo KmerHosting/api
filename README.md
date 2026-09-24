@@ -64,3 +64,14 @@ The full contract, including every ConvertSuite route and schema, is available i
 ## License
 
 Proprietary. KmerHosting API access is subject to KmerHosting terms.
+
+
+## Public domain availability search
+
+Domain availability search is intentionally public and separate from authenticated account operations:
+
+- `GET https://domain.kmerhosting.com/api/domain-search?domain=example.com`
+- `GET https://domain.kmerhosting.com/api/domain-search?domains=example.com,example.org`
+- `POST https://domain.kmerhosting.com/api/domain-search` with up to 20 domains
+
+No API key is required. The operation is included in the OpenAPI document with an operation-level server pointing to `domain.kmerhosting.com`. The Domain customer UI is centralized in `https://dashboard.kmerhosting.com/domains/`; moving the legacy portal UI does not move or remove the public search API.

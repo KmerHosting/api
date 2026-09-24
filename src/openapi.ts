@@ -33,7 +33,7 @@ const publicDomainSearchGet = {
   security: [],
   tags: ["Domain Search"],
   summary: "Check public domain availability",
-  description: "Unauthenticated public search. Send one domain with `domain` or `q`, or up to 20 domains with repeated `domain`/`domains` parameters or a comma-separated `domains` value. The allowance is 20 requests per client IP in a rolling 60-second window; one bulk request counts as one request.",
+  description: "Unauthenticated public search served from domain.kmerhosting.com. Send one domain with `domain` or `q`, or up to 20 domains with repeated `domain`/`domains` parameters or a comma-separated `domains` value. The allowance is 20 requests per client IP in a rolling 60-second window; one bulk request counts as one request. The legacy Domain web portal UI may redirect users to Dashboard, but this API endpoint remains stable.",
   parameters: publicDomainSearchParameters,
   responses: publicDomainSearchResponses,
 };
@@ -42,7 +42,7 @@ const publicDomainSearchPost = {
   security: [],
   tags: ["Domain Search"],
   summary: "Check public domain availability in bulk",
-  description: "Unauthenticated public search. Send an array of up to 20 domains, or one scalar `domain`, `domainName` or `q` value. One bulk request counts as one request against the client IP allowance.",
+  description: "Unauthenticated public search served from domain.kmerhosting.com. Send an array of up to 20 domains, or one scalar `domain`, `domainName` or `q` value. One bulk request counts as one request against the client IP allowance. The legacy Domain web portal UI may redirect users to Dashboard, but this API endpoint remains stable.",
   requestBody: publicDomainSearchRequestBody,
   responses: publicDomainSearchResponses,
 };
@@ -52,11 +52,11 @@ export const openapi = {
   info: {
     title: "KmerHosting API",
     version: "v1",
-    description: "Public API for resources owned by the authenticated KmerHosting account. Sensitive infrastructure operations require an explicit scope, an IPv4 allowlist and an idempotency key. Provider credentials, purchases and account administration remain unavailable.",
+    description: "KmerHosting API contract. Authenticated account and service operations use api.kmerhosting.com. Public domain availability search remains unauthenticated on domain.kmerhosting.com and is documented here with operation-level servers. Customer ordering and management for Domains, Email Hosting and Shared Hosting are centralized in dashboard.kmerhosting.com.",
   },
   servers: [{ url: "https://api.kmerhosting.com", description: "Production" }],
   security: [{ bearerAuth: [] }],
-  tags: [{ name: "Account" }, { name: "Services" }, { name: "Domains" }, { name: "Domain Search" }, { name: "Email Hosting" }, { name: "Shared Hosting" }, { name: "LXC" }, { name: "KVM" }, { name: "ConvertSuite" }],
+  tags: [{ name: "Account" }, { name: "Services" }, { name: "Domains" }, { name: "Domain Search", description: "Public, read-only availability and pricing search served from domain.kmerhosting.com. No account or API key is required." }, { name: "Email Hosting" }, { name: "Shared Hosting" }, { name: "LXC" }, { name: "KVM" }, { name: "ConvertSuite" }],
   paths: {
     "/health": { get: { security: [], summary: "API health", responses: { "200": { description: "Healthy" } } } },
     "/api/domain-search": { get: { ...publicDomainSearchGet }, post: { ...publicDomainSearchPost } },
