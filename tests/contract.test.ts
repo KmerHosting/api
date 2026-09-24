@@ -94,6 +94,9 @@ test("serves the interactive API documentation and OpenAPI contract", async () =
   expect(document.paths?.["/api/domain-search"]?.get?.security).toEqual([]);
   expect(document.paths?.["/api/domain-search"]?.post?.requestBody?.content?.["application/json"]).toBeDefined();
   expect(document.paths?.["/api/domain/domain-search-fast"]?.get).toBeDefined();
+  const prepareUpload = document.paths?.["/v1/convertsuite/prepare-upload"]?.post;
+  expect(prepareUpload?.responses?.["402"]).toEqual({ $ref: "#/components/responses/Error" });
+  expect(prepareUpload?.["402"]).toBeUndefined();
 });
 
 function request(path: string, init: RequestInit = {}, token = "kh_live_test"): Request {
