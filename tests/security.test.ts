@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { ApiError, assertActiveKey, assertActiveToken, extractBearerKey, requireScope, sha256 } from "../src/security";
 
-test("hashes keys with dashboard-compatible SHA-256", async () => {
+test("hashes keys with KmerHosting-compatible SHA-256", async () => {
   expect(await sha256("kh_live_example")).toBe("40ed4b96dd543521d4b47f8b97adef641e6b164202fd83d0a356e34bc7fa663d");
 });
 

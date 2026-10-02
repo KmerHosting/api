@@ -13,7 +13,7 @@ Explore the API with Swagger:
 
 ## Authentication
 
-For server-to-server integrations, send a KmerHosting API key. Remote MCP clients use the user-scoped OAuth access token issued by the KmerHosting Dashboard.
+For server-to-server integrations, send a KmerHosting API key. Remote MCP clients use the user-scoped OAuth access token issued by KmerHosting Dash.
 
 ```bash
 export KMERHOSTING_API_KEY="kh_live_..."
@@ -74,4 +74,4 @@ Domain availability search is intentionally public and separate from authenticat
 - `GET https://domain.kmerhosting.com/api/domain-search?domains=example.com,example.org`
 - `POST https://domain.kmerhosting.com/api/domain-search` with up to 20 domains
 
-No API key is required. The operation is included in the OpenAPI document with an operation-level server pointing to `domain.kmerhosting.com`. The Domain customer UI is centralized in `https://dashboard.kmerhosting.com/domains/`; moving the legacy portal UI does not move or remove the public search API.
+No API key is required. The operation is included in the OpenAPI document with an operation-level server pointing to `domain.kmerhosting.com`. The Domain customer UI is centralized in `https://dash.kmerhosting.com/domains/`; moving the legacy portal UI does not move or remove the public search API.

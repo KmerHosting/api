@@ -77,25 +77,25 @@ async function authenticate(request: Request, db: ApiStore): Promise<Principal> 
   const credential = extractBearerCredential(request.headers.get("authorization"));
   const hash = await sha256(credential);
   if (credential.startsWith("kh_live_")) {
-    const keys = await db.rest<ApiKey[]>(`dashboard_api_keys?select=id,user_id,scopes,rate_limit_per_minute,expires_at,revoked_at,disabled_at,allowed_ipv4&secret_hash=eq.${hash}&limit=1`);
+    const keys = await db.rest<ApiKey[]>(`dash_api_keys?select=id,user_id,scopes,rate_limit_per_minute,expires_at,revoked_at,disabled_at,allowed_ipv4&secret_hash=eq.${hash}&limit=1`);
     const key = keys[0];
     if (!key) throw new ApiError(401, "invalid_api_key", "The API key is invalid.");
     assertActiveKey(key);
     if (!Array.isArray(key.scopes)) throw new ApiError(503, "api_key_schema_not_ready", "The API-key scope migration has not been applied.");
-    const allowed = await db.rpc<boolean>("consume_dashboard_api_key_rate_limit", { p_api_key_id: key.id, p_limit: key.rate_limit_per_minute });
+    const allowed = await db.rpc<boolean>("consume_dash_api_key_rate_limit", { p_api_key_id: key.id, p_limit: key.rate_limit_per_minute });
     if (!allowed) throw new ApiError(429, "rate_limit_exceeded", "Too many requests. Try again in one minute.");
-    await db.update(`dashboard_api_keys?id=eq.${key.id}`, { last_used_at: new Date().toISOString() });
+    await db.update(`dash_api_keys?id=eq.${key.id}`, { last_used_at: new Date().toISOString() });
     return { kind: "api_key", key, userId: key.user_id };
   }
 
-  const tokens = await db.rest<OAuthToken[]>(`dashboard_oauth_access_tokens?select=id,user_id,scopes,rate_limit_per_minute,expires_at,revoked_at&token_hash=eq.${hash}&limit=1`);
+  const tokens = await db.rest<OAuthToken[]>(`dash_oauth_access_tokens?select=id,user_id,scopes,rate_limit_per_minute,expires_at,revoked_at&token_hash=eq.${hash}&limit=1`);
   const token = tokens[0];
   if (!token) throw new ApiError(401, "invalid_token", "The OAuth access token is invalid.");
   assertActiveToken(token);
   if (!Array.isArray(token.scopes)) throw new ApiError(503, "oauth_schema_not_ready", "The OAuth migration has not been applied.");
-  const allowed = await db.rpc<boolean>("consume_dashboard_oauth_rate_limit", { p_token_id: token.id, p_limit: token.rate_limit_per_minute });
+  const allowed = await db.rpc<boolean>("consume_dash_oauth_rate_limit", { p_token_id: token.id, p_limit: token.rate_limit_per_minute });
   if (!allowed) throw new ApiError(429, "rate_limit_exceeded", "Too many requests. Try again in one minute.");
-  await db.update(`dashboard_oauth_access_tokens?id=eq.${token.id}`, { last_used_at: new Date().toISOString() });
+  await db.update(`dash_oauth_access_tokens?id=eq.${token.id}`, { last_used_at: new Date().toISOString() });
   return { kind: "oauth", token, userId: token.user_id };
 }
 
@@ -125,7 +125,7 @@ async function optionalProductUserId(db: ApiStore, principal: Principal, product
 async function requireOwnedService(db: ApiStore, principal: Principal, serviceId: string, product: "hosting" | "kvm"): Promise<void> {
   const filter = product === "hosting" ? "&source_system=eq.shared-hosting" : "&service_type=eq.kvm_vps";
   const rows = await db.rest<Record<string, unknown>[]>(
-    `dashboard_services?select=id&id=eq.${serviceId}&user_id=eq.${principal.userId}${filter}&limit=1`,
+    `dash_services?select=id&id=eq.${serviceId}&user_id=eq.${principal.userId}${filter}&limit=1`,
   );
   if (!rows[0]) throw new ApiError(404, "service_not_found", "The service was not found.");
 }
@@ -136,13 +136,13 @@ function routeTemplate(path: string): string {
 
 async function recordUsage(db: ApiStore, principal: Principal, id: string, operation: string, status: string, request: Request, kind: "read" | "mutation" | "operation" = "read", httpStatus?: number): Promise<void> {
   if (principal.kind === "api_key") {
-    await db.insert("dashboard_api_key_usage", {
+    await db.insert("dash_api_key_usage", {
       api_key_id: principal.key.id, user_id: principal.userId, request_id: id, product: "developer_api", service: "public-api", operation, status,
       billable: false, cost_usd_micros: 0, client_ipv4: trustedClientIpv4(request), user_agent: (request.headers.get("user-agent") ?? "").slice(0, 500),
       http_method: request.method, route: routeTemplate(new URL(request.url).pathname), http_status: httpStatus ?? (status === "succeeded" ? 200 : 500), request_kind: kind, metadata: {},
     });
   } else {
-    await db.insert("dashboard_oauth_usage", { oauth_token_id: principal.token.id, user_id: principal.userId, request_id: id, operation, status, metadata: {} });
+    await db.insert("dash_oauth_usage", { oauth_token_id: principal.token.id, user_id: principal.userId, request_id: id, operation, status, metadata: {} });
   }
 }
 
@@ -183,8 +183,8 @@ async function writeRoute(request: Request, config: Config, db: ApiStore, id: st
   }
   const fingerprint = await sha256([request.method, path, raw].join("\n"));
   const claim = principal.kind === "api_key"
-    ? await db.rpc<IdempotencyClaim>("claim_dashboard_api_idempotency_key", { p_api_key_id: principal.key.id, p_operation: operation, p_idempotency_key: key, p_request_hash: fingerprint })
-    : await db.rpc<IdempotencyClaim>("claim_dashboard_oauth_idempotency_key", { p_oauth_token_id: principal.token.id, p_operation: operation, p_idempotency_key: key, p_request_hash: fingerprint });
+    ? await db.rpc<IdempotencyClaim>("claim_dash_api_idempotency_key", { p_api_key_id: principal.key.id, p_operation: operation, p_idempotency_key: key, p_request_hash: fingerprint })
+    : await db.rpc<IdempotencyClaim>("claim_dash_oauth_idempotency_key", { p_oauth_token_id: principal.token.id, p_operation: operation, p_idempotency_key: key, p_request_hash: fingerprint });
   if (claim.state === "conflict") throw new ApiError(409, "idempotency_key_conflict", "This Idempotency-Key was used with a different request.");
   if (claim.state === "pending") throw new ApiError(409, "request_in_progress", "A request with this Idempotency-Key is still in progress.");
   if (claim.state === "replay") return responseJson(request, config, claim.response_body, claim.response_status ?? 200, id);
@@ -200,9 +200,9 @@ async function writeRoute(request: Request, config: Config, db: ApiStore, id: st
     await recordUsage(db, principal, id, operation, "rejected", request, "mutation", apiError.status).catch(() => undefined);
   }
   if (principal.kind === "api_key") {
-    await db.rpc("complete_dashboard_api_idempotency_key", { p_api_key_id: principal.key.id, p_operation: operation, p_idempotency_key: key, p_response_status: response.status, p_response_body: response.body });
+    await db.rpc("complete_dash_api_idempotency_key", { p_api_key_id: principal.key.id, p_operation: operation, p_idempotency_key: key, p_response_status: response.status, p_response_body: response.body });
   } else {
-    await db.rpc("complete_dashboard_oauth_idempotency_key", { p_oauth_token_id: principal.token.id, p_operation: operation, p_idempotency_key: key, p_response_status: response.status, p_response_body: response.body });
+    await db.rpc("complete_dash_oauth_idempotency_key", { p_oauth_token_id: principal.token.id, p_operation: operation, p_idempotency_key: key, p_response_status: response.status, p_response_body: response.body });
   }
   return responseJson(request, config, response.body, response.status, id);
 }
@@ -236,12 +236,12 @@ export async function handle(request: Request, config: Config = loadConfig(), st
       return new Response(asset, { headers: { "Cache-Control": "public, max-age=86400" } });
     }
     if (path === "/v1/account" && request.method === "GET") return await readRoute(request, config, db, id, "account:read", "account.read", async (principal) => {
-      const rows = await db.rest<Record<string, unknown>[]>(`dashboard_users?select=id,email,full_name,first_name,last_name,company_name,country,preferred_language,timezone,status,created_at&id=eq.${principal.userId}&limit=1`);
+      const rows = await db.rest<Record<string, unknown>[]>(`dash_users?select=id,email,full_name,first_name,last_name,company_name,country,preferred_language,timezone,status,created_at&id=eq.${principal.userId}&limit=1`);
       if (!rows[0]) throw new ApiError(404, "account_not_found", "The account was not found.");
       return rows[0];
     });
     if (path === "/v1/account/api-usage" && request.method === "GET") return await readRoute(request, config, db, id, "account:usage:read", "account.api_usage", async (principal) => {
-      const rows = await db.rest<Record<string, unknown>[]>(`dashboard_api_key_usage?select=id,request_id,product,service,operation,status,billable,cost_usd_micros,balance_after_usd_micros,client_ipv4,user_agent,http_method,route,http_status,request_kind,operation_id,occurred_at&user_id=eq.${principal.userId}&order=occurred_at.desc&limit=500`);
+      const rows = await db.rest<Record<string, unknown>[]>(`dash_api_key_usage?select=id,request_id,product,service,operation,status,billable,cost_usd_micros,balance_after_usd_micros,client_ipv4,user_agent,http_method,route,http_status,request_kind,operation_id,occurred_at&user_id=eq.${principal.userId}&order=occurred_at.desc&limit=500`);
       return {
         entries: rows,
         summary: {
@@ -261,10 +261,10 @@ export async function handle(request: Request, config: Config = loadConfig(), st
       if (action === "start" && request.method === "POST") return await writeRoute(request, config, db, id, "convertsuite:process", "convertsuite.jobs.start", path, (principal) => forwardMutation(config, db, principal, "convertsuite", "POST", `/v1/jobs/${jobId}/start`, {}));
       if (action === "cancel" && request.method === "POST") return await writeRoute(request, config, db, id, "convertsuite:process", "convertsuite.jobs.cancel", path, (principal) => forwardMutation(config, db, principal, "convertsuite", "POST", `/v1/jobs/${jobId}/cancel`, {}));
     }
-    if (path === "/v1/services" && request.method === "GET") return await readRoute(request, config, db, id, "services:read", "services.list", (principal) => db.rest(`dashboard_services?select=id,service_type,source_system,source_record_id,display_name,status,management_mode,plan_name,renewal_price,renewal_currency,billing_months,activated_at,renews_at,auto_renew,grace_ends_at,cancellation_requested_at,cancel_at,created_at,updated_at&user_id=eq.${principal.userId}&order=created_at.desc`));
+    if (path === "/v1/services" && request.method === "GET") return await readRoute(request, config, db, id, "services:read", "services.list", (principal) => db.rest(`dash_services?select=id,service_type,source_system,source_record_id,display_name,status,management_mode,plan_name,renewal_price,renewal_currency,billing_months,activated_at,renews_at,auto_renew,grace_ends_at,cancellation_requested_at,cancel_at,created_at,updated_at&user_id=eq.${principal.userId}&order=created_at.desc`));
     const service = path.match(/^\/v1\/services\/([0-9a-f-]{36})$/i);
     if (service && request.method === "GET") return await readRoute(request, config, db, id, "services:read", "services.read", async (principal) => {
-      const rows = await db.rest<Record<string, unknown>[]>(`dashboard_services?select=id,service_type,source_system,source_record_id,display_name,status,management_mode,plan_name,renewal_price,renewal_currency,billing_months,activated_at,renews_at,auto_renew,grace_ends_at,cancellation_requested_at,cancel_at,created_at,updated_at&id=eq.${service[1]}&user_id=eq.${principal.userId}&limit=1`);
+      const rows = await db.rest<Record<string, unknown>[]>(`dash_services?select=id,service_type,source_system,source_record_id,display_name,status,management_mode,plan_name,renewal_price,renewal_currency,billing_months,activated_at,renews_at,auto_renew,grace_ends_at,cancellation_requested_at,cancel_at,created_at,updated_at&id=eq.${service[1]}&user_id=eq.${principal.userId}&limit=1`);
       if (!rows[0]) throw new ApiError(404, "service_not_found", "The service was not found.");
       return rows[0];
     });
@@ -291,7 +291,7 @@ export async function handle(request: Request, config: Config = loadConfig(), st
       const operation = action === "provision" ? "email.services.provision" : "email.services.dns.sync";
       return await writeRoute(request, config, db, id, "email:write", operation, path, (principal) => forwardMutation(config, db, principal, "email", "POST", "/", { action: action === "provision" ? "provision_service" : "sync_dns", serviceId }));
     }
-    if (path === "/v1/hosting/services" && request.method === "GET") return await readRoute(request, config, db, id, "hosting:read", "hosting.services.list", (principal) => db.rest(`dashboard_services?select=id,display_name,status,plan_name,management_mode,renewal_price,renewal_currency,renews_at,auto_renew,created_at&user_id=eq.${principal.userId}&source_system=eq.shared-hosting&order=created_at.desc`));
+    if (path === "/v1/hosting/services" && request.method === "GET") return await readRoute(request, config, db, id, "hosting:read", "hosting.services.list", (principal) => db.rest(`dash_services?select=id,display_name,status,plan_name,management_mode,renewal_price,renewal_currency,renews_at,auto_renew,created_at&user_id=eq.${principal.userId}&source_system=eq.shared-hosting&order=created_at.desc`));
     const hosting = path.match(/^\/v1\/hosting\/services\/([0-9a-f-]{36})\/(stats|panel-access)$/i);
     if (hosting) {
       const [, serviceId, action] = hosting;
@@ -320,7 +320,7 @@ export async function handle(request: Request, config: Config = loadConfig(), st
       if (area === "auto-renew" && request.method === "PUT") return await writeRoute(request, config, db, id, "lxc:subscription:write", "lxc.instances.auto_renew", path, (principal, body) => forwardMutation(config, db, principal, "lxc", "POST", `/instances/${serviceId}/subscription`, { action: "set_auto_renew", enabled: body.enabled }));
       if (area === "billing-period" && request.method === "PUT") return await writeRoute(request, config, db, id, "lxc:subscription:write", "lxc.instances.billing_period", path, (principal, body) => forwardMutation(config, db, principal, "lxc", "POST", `/instances/${serviceId}/subscription`, { action: "set_billing_period", billingMonths: body.billingMonths }));
     }
-    if (path === "/v1/kvm/instances" && request.method === "GET") return await readRoute(request, config, db, id, "kvm:read", "kvm.instances.list", (principal) => db.rest(`dashboard_services?select=id,display_name,status,plan_name,renews_at,auto_renew,created_at&user_id=eq.${principal.userId}&service_type=eq.kvm_vps&order=created_at.desc`));
+    if (path === "/v1/kvm/instances" && request.method === "GET") return await readRoute(request, config, db, id, "kvm:read", "kvm.instances.list", (principal) => db.rest(`dash_services?select=id,display_name,status,plan_name,renews_at,auto_renew,created_at&user_id=eq.${principal.userId}&service_type=eq.kvm_vps&order=created_at.desc`));
     const kvm = path.match(/^\/v1\/kvm\/instances\/([0-9a-f-]{36})(?:\/(actions|snapshots|auto-renew|password|renew|cancel|keep-service))?(?:\/(rollback|[A-Za-z0-9._:-]{1,160}))?$/i);
     if (kvm) {
       const [, serviceId, area, snapshotId] = kvm;
