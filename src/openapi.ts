@@ -33,7 +33,7 @@ const publicDomainSearchGet = {
   security: [],
   tags: ["Domain Search"],
   summary: "Check public domain availability",
-  description: "Unauthenticated public search served from domain.kmerhosting.com. Send one domain with `domain` or `q`, or up to 20 domains with repeated `domain`/`domains` parameters or a comma-separated `domains` value. The allowance is 20 requests per client IP in a rolling 60-second window; one bulk request counts as one request. The legacy Domain web portal UI may redirect users to Dash, but this API endpoint remains stable.",
+  description: "Unauthenticated public search served from domain.kmerhosting.com. Send one domain with `domain` or `q`, or up to 20 domains with repeated `domain`/`domains` parameters or a comma-separated `domains` value. The allowance is 20 requests per client IP in a rolling 60-second window; one bulk request counts as one request. The legacy Domain web portal UI may redirect users to the Dashboard, but this API endpoint remains stable.",
   parameters: publicDomainSearchParameters,
   responses: publicDomainSearchResponses,
 };
@@ -42,7 +42,7 @@ const publicDomainSearchPost = {
   security: [],
   tags: ["Domain Search"],
   summary: "Check public domain availability in bulk",
-  description: "Unauthenticated public search served from domain.kmerhosting.com. Send an array of up to 20 domains, or one scalar `domain`, `domainName` or `q` value. One bulk request counts as one request against the client IP allowance. The legacy Domain web portal UI may redirect users to Dash, but this API endpoint remains stable.",
+  description: "Unauthenticated public search served from domain.kmerhosting.com. Send an array of up to 20 domains, or one scalar `domain`, `domainName` or `q` value. One bulk request counts as one request against the client IP allowance. The legacy Domain web portal UI may redirect users to the Dashboard, but this API endpoint remains stable.",
   requestBody: publicDomainSearchRequestBody,
   responses: publicDomainSearchResponses,
 };
@@ -52,7 +52,7 @@ export const openapi = {
   info: {
     title: "KmerHosting API",
     version: "v1",
-    description: "KmerHosting API contract. Authenticated account and service operations use api.kmerhosting.com. Public domain availability search remains unauthenticated on domain.kmerhosting.com and is documented here with operation-level servers. Customer ordering and management for Domains, Email Hosting and Shared Hosting are centralized in dash.kmerhosting.com.",
+    description: "KmerHosting API contract. Authenticated account and service operations use api.kmerhosting.com. Public domain availability search remains unauthenticated on domain.kmerhosting.com and is documented here with operation-level servers. Customer ordering and management for Domains, Email Hosting and Shared Hosting are centralized in the KmerHosting Dashboard at dash.kmerhosting.com.",
   },
   servers: [{ url: "https://api.kmerhosting.com", description: "Production" }],
   security: [{ bearerAuth: [] }],
