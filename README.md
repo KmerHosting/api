@@ -13,7 +13,7 @@ Explore the API with Swagger:
 
 ## Authentication
 
-For server-to-server integrations, send a KmerHosting API key. Remote MCP clients use the user-scoped OAuth access token issued by KmerHosting Dash.
+For server-to-server integrations, send a KmerHosting API key. Remote MCP clients use the user-scoped OAuth access token issued by KmerHosting Dashboard.
 
 ```bash
 export KMERHOSTING_API_KEY="kh_live_..."
