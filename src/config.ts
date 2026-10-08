@@ -41,7 +41,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     emailApiUrl: (env.EMAIL_API_URL ?? `${required("SUPABASE_URL", env.SUPABASE_URL).replace(/\/$/, "")}/functions/v1/eh-mail-api`).replace(/\/$/, ""),
     hostingApiUrl: (env.HOSTING_API_URL ?? `${required("SUPABASE_URL", env.SUPABASE_URL).replace(/\/$/, "")}/functions/v1/hosting-api-gateway`).replace(/\/$/, ""),
     lxcApiUrl: (env.LXC_API_URL ?? "https://lxc.kmerhosting.com/api/internal").replace(/\/$/, ""),
-    kvmApiUrl: (env.KVM_API_URL ?? `${required("SUPABASE_URL", env.SUPABASE_URL).replace(/\/$/, "")}/functions/v1/dash-kvm-provider`).replace(/\/$/, ""),
+    kvmApiUrl: (env.KVM_API_URL ?? `${required("SUPABASE_URL", env.SUPABASE_URL).replace(/\/$/, "")}/functions/v1/dashboard-kvm-provider`).replace(/\/$/, ""),
     convertsuiteApiUrl: (env.CONVERTSUITE_API_URL ?? "https://api.convertsuite.pro").replace(/\/$/, ""),
     corsOrigins: new Set(origins),
   };

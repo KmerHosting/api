@@ -48,11 +48,11 @@ function storeFor(options: { scopes?: string[]; owner?: string; oauth?: boolean;
   };
   return {
     async rest<T>(path: string): Promise<T> {
-      if (path.startsWith("dash_api_keys?")) return (options.oauth ? [] : [key]) as T;
-      if (path.startsWith("dash_oauth_access_tokens?")) return (options.oauth ? [token] : []) as T;
-      if (path.startsWith("dash_product_identities?")) return [{ external_user_id: `${owner}-external` }] as T;
-      if (path.startsWith("dash_users?")) return [{ id: owner, email: "test@example.com" }] as T;
-      if (path.startsWith("dash_services?")) return [{ id: serviceId, user_id: owner }] as T;
+      if (path.startsWith("dashboard_api_keys?")) return (options.oauth ? [] : [key]) as T;
+      if (path.startsWith("dashboard_oauth_access_tokens?")) return (options.oauth ? [token] : []) as T;
+      if (path.startsWith("dashboard_product_identities?")) return [{ external_user_id: `${owner}-external` }] as T;
+      if (path.startsWith("dashboard_users?")) return [{ id: owner, email: "test@example.com" }] as T;
+      if (path.startsWith("dashboard_services?")) return [{ id: serviceId, user_id: owner }] as T;
       if (path.startsWith("eh_services?")) return [{ id: serviceId, user_id: owner }] as T;
       if (path.startsWith("yts_instances?")) return [{ id: serviceId, user_id: owner }] as T;
       return [] as T;

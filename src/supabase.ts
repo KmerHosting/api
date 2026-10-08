@@ -51,7 +51,7 @@ export class SupabaseRest {
 
   async productIdentity(userId: string, product: "domain" | "emails" | "lxc"): Promise<string> {
     const rows = await this.rest<Array<{ external_user_id: string | null }>>(
-      `dash_product_identities?select=external_user_id&user_id=eq.${userId}&product=eq.${product}&limit=1`,
+      `dashboard_product_identities?select=external_user_id&user_id=eq.${userId}&product=eq.${product}&limit=1`,
     );
     const externalUserId = rows[0]?.external_user_id?.trim();
     if (!externalUserId) throw new ProductIdentityNotLinkedError(product);
