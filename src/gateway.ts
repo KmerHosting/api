@@ -1,7 +1,7 @@
 import type { Config } from "./config";
 import { ApiError, sha256 } from "./security";
 
-export type Product = "domain" | "email" | "hosting" | "lxc" | "kvm" | "convertsuite";
+export type Product = "domain" | "email" | "hosting" | "lxc" | "kvm";
 
 type GatewayCall = {
   product: Product;
@@ -18,8 +18,7 @@ function baseUrl(config: Config, product: Product): string {
     : product === "email" ? config.emailApiUrl
     : product === "hosting" ? config.hostingApiUrl
     : product === "lxc" ? config.lxcApiUrl
-    : product === "kvm" ? config.kvmApiUrl
-    : config.convertsuiteApiUrl;
+    : config.kvmApiUrl;
 }
 
 async function hmac(secret: string, value: string): Promise<string> {
