@@ -15,7 +15,6 @@ const config: Config = {
   hostingApiUrl: "https://hosting.example.test",
   lxcApiUrl: "https://lxc.example.test",
   kvmApiUrl: "https://lxc.example.test",
-  convertsuiteApiUrl: "https://convertsuite.example.test",
   corsOrigins: new Set(),
 };
 

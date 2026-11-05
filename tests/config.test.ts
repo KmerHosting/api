@@ -16,7 +16,3 @@ test("rejects wildcard CORS in production", () => {
   expect(() => loadConfig({ ...base, CORS_ORIGINS: "*" })).toThrow("explicit HTTPS origins");
 });
 
-test("configures ConvertSuite as a first-class product upstream", () => {
-  expect(loadConfig(base).convertsuiteApiUrl).toBe("https://api.convertsuite.pro");
-  expect(loadConfig({ ...base, CONVERTSUITE_API_URL: "https://internal.example.test/" }).convertsuiteApiUrl).toBe("https://internal.example.test");
-});
