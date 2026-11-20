@@ -1,0 +1,6 @@
+# Public API
+GET https://api.kmerhosting.com/health 200 "status":"ok"
+GET https://api.kmerhosting.com/openapi.json 200 "openapi"
+# Account routes refuse anonymous calls
+GET https://api.kmerhosting.com/v1/account 401
+GET https://api.kmerhosting.com/v1/services 401
