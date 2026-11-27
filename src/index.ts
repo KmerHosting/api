@@ -1,7 +1,7 @@
 import { loadConfig, type Config } from "./config";
 import { callProduct, productError, type Product } from "./gateway";
 import { openapi } from "./openapi";
-import { ApiError, assertActiveKey, assertActiveToken, extractBearerCredential, requireAllowedIpv4, requireScope, sha256, trustedClientIpv4 } from "./security";
+import { ApiError, assertActiveKey, assertActiveToken, extractBearerCredential, requireAllowedIpv4, rateLimitHeaders, requireScope, sha256, trustedClientIpv4 } from "./security";
 import { ProductIdentityNotLinkedError, SupabaseRest } from "./supabase";
 
 type ApiKey = {
@@ -41,14 +41,16 @@ function corsHeaders(request: Request, config: Config): Headers {
   if (origin && config.corsOrigins.has(origin)) {
     headers.set("Access-Control-Allow-Origin", origin);
     headers.set("Access-Control-Allow-Headers", "Authorization, Content-Type, Idempotency-Key, X-Request-Id");
+    headers.set("Access-Control-Expose-Headers", "Retry-After, X-RateLimit-Limit, X-RateLimit-Remaining, X-Request-Id");
     headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
     headers.set("Access-Control-Max-Age", "600");
   }
   return headers;
 }
 
-function responseJson(request: Request, config: Config, body: unknown, status = 200, id = requestId()): Response {
+function responseJson(request: Request, config: Config, body: unknown, status = 200, id = requestId(), extraHeaders: Record<string, string> = {}): Response {
   const headers = corsHeaders(request, config);
+  for (const [key, value] of Object.entries(extraHeaders)) headers.set(key, value);
   headers.set("Content-Type", "application/json; charset=utf-8");
   headers.set("X-Request-Id", id);
   for (const [key, value] of Object.entries(noStore)) headers.set(key, value);
@@ -58,7 +60,7 @@ function responseJson(request: Request, config: Config, body: unknown, status = 
 function apiErrorBody(error: ApiError, id: string) { return { error: { code: error.code, message: error.message, request_id: id } }; }
 
 function errorResponse(request: Request, config: Config, error: unknown, id: string): Response {
-  if (error instanceof ApiError) return responseJson(request, config, apiErrorBody(error, id), error.status, id);
+  if (error instanceof ApiError) return responseJson(request, config, apiErrorBody(error, id), error.status, id, error.headers);
   console.error(JSON.stringify({ request_id: id, message: error instanceof Error ? error.message : "Unknown error" }));
   return responseJson(request, config, { error: { code: "internal_error", message: "An unexpected error occurred.", request_id: id } }, 500, id);
 }
@@ -83,7 +85,7 @@ async function authenticate(request: Request, db: ApiStore): Promise<Principal> 
     assertActiveKey(key);
     if (!Array.isArray(key.scopes)) throw new ApiError(503, "api_key_schema_not_ready", "The API-key scope migration has not been applied.");
     const allowed = await db.rpc<boolean>("consume_dashboard_api_key_rate_limit", { p_api_key_id: key.id, p_limit: key.rate_limit_per_minute });
-    if (!allowed) throw new ApiError(429, "rate_limit_exceeded", "Too many requests. Try again in one minute.");
+    if (!allowed) throw new ApiError(429, "rate_limit_exceeded", "Too many requests. Try again in one minute.", rateLimitHeaders(key.rate_limit_per_minute));
     await db.update(`dashboard_api_keys?id=eq.${key.id}`, { last_used_at: new Date().toISOString() });
     return { kind: "api_key", key, userId: key.user_id };
   }
@@ -94,7 +96,7 @@ async function authenticate(request: Request, db: ApiStore): Promise<Principal> 
   assertActiveToken(token);
   if (!Array.isArray(token.scopes)) throw new ApiError(503, "oauth_schema_not_ready", "The OAuth migration has not been applied.");
   const allowed = await db.rpc<boolean>("consume_dashboard_oauth_rate_limit", { p_token_id: token.id, p_limit: token.rate_limit_per_minute });
-  if (!allowed) throw new ApiError(429, "rate_limit_exceeded", "Too many requests. Try again in one minute.");
+  if (!allowed) throw new ApiError(429, "rate_limit_exceeded", "Too many requests. Try again in one minute.", rateLimitHeaders(token.rate_limit_per_minute));
   await db.update(`dashboard_oauth_access_tokens?id=eq.${token.id}`, { last_used_at: new Date().toISOString() });
   return { kind: "oauth", token, userId: token.user_id };
 }

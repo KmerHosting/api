@@ -3,6 +3,7 @@ export class ApiError extends Error {
     public readonly status: number,
     public readonly code: string,
     message: string,
+    public readonly headers: Record<string, string> = {},
   ) {
     super(message);
   }
@@ -63,4 +64,10 @@ export function assertActiveToken(token: { revoked_at: string | null; expires_at
   if (token.revoked_at || (token.expires_at && Date.parse(token.expires_at) <= Date.now())) {
     throw new ApiError(401, "invalid_token", "This OAuth access token is inactive, revoked, or expired.");
   }
+}
+
+/** Headers for a rate-limit rejection. Limits use a fixed one-minute window, so retry at the next minute boundary. */
+export function rateLimitHeaders(limit: number, now = Date.now()): Record<string, string> {
+  const retryAfter = Math.max(1, 60 - Math.floor((now % 60_000) / 1000));
+  return { "Retry-After": String(retryAfter), "X-RateLimit-Limit": String(limit), "X-RateLimit-Remaining": "0" };
 }

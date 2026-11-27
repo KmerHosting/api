@@ -129,6 +129,10 @@ test("returns stable structured errors for authentication, scopes, JSON and idem
   const limited = await handle(request("/v1/account"), config, storeFor({ scopes: ["account:read"], rateLimitAllowed: false }));
   expect(limited.status).toBe(429);
   expect((await json(limited)).error.code).toBe("rate_limit_exceeded");
+  expect(Number(limited.headers.get("Retry-After"))).toBeGreaterThanOrEqual(1);
+  expect(Number(limited.headers.get("Retry-After"))).toBeLessThanOrEqual(60);
+  expect(limited.headers.get("X-RateLimit-Limit")).toBe("100");
+  expect(limited.headers.get("X-RateLimit-Remaining")).toBe("0");
 
   const conflict = await handle(request(`/v1/kvm/instances/${serviceId}/actions`, {
     method: "POST",
