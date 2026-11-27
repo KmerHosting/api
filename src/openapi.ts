@@ -124,16 +124,22 @@ export const openapi = {
       PublicDomainSearchResult: { type: "object", required: ["domainName", "registrar", "price"], properties: { domainName: { type: "string" }, registrar: { $ref: "#/components/schemas/PublicDomainRegistrarResult" }, price: { anyOf: [{ $ref: "#/components/schemas/PublicDomainCatalogPrice" }, { type: "null" }] } } },
       PublicDomainSearchResponse: { type: "object", required: ["results", "bulkSearch", "availabilitySource", "registrarEnvironment", "requested", "accepted", "invalid", "unsupported", "generatedAt"], properties: { results: { type: "array", maxItems: 20, items: { $ref: "#/components/schemas/PublicDomainSearchResult" } }, bulkSearch: { type: "boolean" }, availabilitySource: { type: "string", enum: ["ote", "production"] }, registrarEnvironment: { type: "string", enum: ["ote", "production"] }, requested: { type: "integer" }, accepted: { type: "integer", maximum: 20 }, invalid: { type: "array", items: { type: "string" } }, unsupported: { type: "integer" }, generatedAt: { type: "string", format: "date-time" } } },
     },
-    responses: { Error: { description: "API error", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } } },
+    responses: {
+      Error: { description: "API error", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+      RateLimited: { description: "The credential exceeded its per-minute request allowance (`rate_limit_per_minute`, fixed one-minute window; default 60). Retry after the number of seconds in `Retry-After`.", headers: { "Retry-After": { description: "Seconds until the next one-minute window.", schema: { type: "integer", minimum: 1 } }, "X-RateLimit-Limit": { description: "Requests allowed per minute for this credential.", schema: { type: "integer" } }, "X-RateLimit-Remaining": { description: "Requests left in the current window (0 on a 429).", schema: { type: "integer" } } }, content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+    },
   },
 } as const;
 
-type OpenApiOperation = { operationId?: string };
+type OpenApiOperation = { operationId?: string; security?: unknown[]; responses?: Record<string, unknown> };
 const httpMethods = new Set(["get", "post", "put", "patch", "delete"]);
 for (const [path, pathItem] of Object.entries(openapi.paths)) {
   for (const [method, operation] of Object.entries(pathItem)) {
     if (!httpMethods.has(method)) continue;
-    (operation as OpenApiOperation).operationId = `${method}_${path}`
+    const op = operation as OpenApiOperation;
+    // Every authenticated operation can be rate limited per credential.
+    if (!op.security && op.responses) op.responses["429"] = { $ref: "#/components/responses/RateLimited" };
+    op.operationId = `${method}_${path}`
       .replace(/[{}]/g, "")
       .replace(/[^A-Za-z0-9]+/g, "_")
       .replace(/^_|_$/g, "");
